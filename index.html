@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lawson Budget</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment } 
+        from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDj8wkC8yyTsqwsvpCE_9tg2qzg2wP4zJQ",
+            authDomain: "budget-tracker-edb31.firebaseapp.com",
+            projectId: "budget-tracker-edb31",
+            storageBucket: "budget-tracker-edb31.firebasestorage.app",
+            messagingSenderId: "159580306838",
+            appId: "1:159580306838:web:25ac3bacae328373dcb1b7",
+            measurementId: "G-NPLMZ6JQ96"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.db = db;
+        window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment };
+    </script>
+</head>
+<body style="margin:0; background: #0f0f13; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #e8e8f0;">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const formatMoney = (n) => "$" + Number(n).toFixed(2);
+
+        function App() {
+            const [envelopes, setEnvelopes] = useState([]);
+            const [view, setView] = useState("dashboard");
+            const [activeId, setActiveId] = useState(null);
+            const [showAdd, setShowAdd] = useState(false);
+            const [showSpend, setShowSpend] = useState(false);
+            const [newEnv, setNewEnv] = useState({ name: "", budget: "" });
+            const [newTx, setNewTx] = useState({ desc: "", amount: "" });
+            const hasCheckedReset = useRef(false);
+
+            useEffect(() => {
+                if (!window.db) return;
+                const unsub = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), async (snapshot) => {
+                    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    
+                    const now = new Date();
+                    const day = now.getDay();
+                    const diff = (day >= 5) ? (day - 5) : (day + 2); 
+                    const lastFriday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+                    lastFriday.setHours(0,0,0,0);
+                    const resetKey = lastFriday.getTime();
+
+                    if (!hasCheckedReset.current && docs.length > 0) {
+                        hasCheckedReset.current = true;
+                        for (const env of docs) {
+                            if (!env.lastReset || env.lastReset < resetKey) {
+                                const remaining = (env.budget || 0) - (env.spent || 0);
+                                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", env.id), {
+                                    budget: (env.baseBudget || 0) + (remaining > 0 ? remaining : 0),
+                                    spent: 0,
+                                    lastReset: resetKey,
+                                    transactions: [] 
+                                });
+                            }
+                        }
+                    }
+                    setEnvelopes(docs);
+                });
+                return () => unsub();
+            }, []);
+
+            const activeEnv = envelopes.find(e => e.id === activeId);
+            const totalRemaining = envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0);
+
+            async function handleCreate() {
+                if (!newEnv.name || !newEnv.budget) return;
+                const b = parseFloat(newEnv.budget);
+                await window.fs.addDoc(window.fs.collection(window.db, "envelopes"), {
+                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, transactions: [], lastReset: Date.now()
+                });
+                setNewEnv({ name: "", budget: "" }); setShowAdd(false);
+            }
+
+            async function handleSpend() {
+                if (!newTx.amount || !activeId) return;
+                const amt = parseFloat(newTx.amount);
+                const envRef = window.fs.doc(window.db, "envelopes", activeId);
+                await window.fs.updateDoc(envRef, {
+                    spent: window.fs.increment(amt),
+                    transactions: window.fs.arrayUnion({
+                        id: Date.now(),
+                        desc: newTx.desc || "Purchase",
+                        amount: amt,
+                        date: new Date().toLocaleDateString()
+                    })
+                });
+                setNewTx({ desc: "", amount: "" }); setShowSpend(false);
+            }
+
+            async function handleDeleteTx(txId, amount) {
+                if (!confirm("Delete this purchase?")) return;
+                const envRef = window.fs.doc(window.db, "envelopes", activeId);
+                const updatedTxs = activeEnv.transactions.filter(t => t.id !== txId);
+                await window.fs.updateDoc(envRef, {
+                    spent: window.fs.increment(-amount),
+                    transactions: updatedTxs
+                });
+            }
+
+            const styles = {
+                app: { padding: "20px", maxWidth: "500px", margin: "0 auto", paddingBottom: "100px" },
+                header: { textAlign: "center", marginBottom: "30px" },
+                totalBox: { background: "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)", padding: "24px", borderRadius: "20px", marginBottom: "25px", textAlign: "center", color: "#0f0f13", boxShadow: "0 10px 20px rgba(167, 139, 250, 0.2)" },
+                card: { background: "#1e1e2e", padding: "20px", borderRadius: "16px", marginBottom: "15px", border: "1px solid #333", position: "relative" },
+                btn: { width: "100%", padding: "14px", background: "#a78bfa", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold", fontSize: "16px", cursor: "pointer" },
+                spendBtn: { background: "#4ECDC4", color: "#0f0f13", border: "none", borderRadius: "8px", padding: "10px 18px", fontWeight: "bold", cursor: "pointer" },
+                input: { width: "100%", padding: "14px", marginBottom: "12px", borderRadius: "10px", border: "1px solid #444", background: "#000", color: "#fff", boxSizing: "border-box", fontSize: "16px" },
+                modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 100 }
+            };
+
+            return (
+                <div style={styles.app}>
+                    <header style={styles.header}>
+                        <h1 style={{margin:0, fontSize: "28px"}}>Lawson Budget</h1>
+                        <p style={{color: "#888", fontSize: "14px", marginTop: "4px"}}>Friday Rollover Active</p>
+                    </header>
+
+                    {view === "dashboard" ? (
+                        <>
+                            <div style={styles.totalBox}>
+                                <div style={{fontSize: "13px", fontWeight: "600", opacity: 0.8, textTransform: "uppercase", marginBottom: "4px"}}>Combined Balance</div>
+                                <div style={{fontSize: "42px", fontWeight: "900"}}>{formatMoney(totalRemaining)}</div>
+                            </div>
+
+                            {envelopes.map(env => (
+                                <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
+                                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                                        <span style={{fontWeight:"bold", fontSize:"18px"}}>{env.name}</span>
+                                        <div style={{fontSize:"12px", color:"#888"}}>Limit: {formatMoney(env.budget)}</div>
+                                    </div>
+                                    <div style={{fontSize: "36px", margin: "12px 0", fontWeight: "800", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#4ECDC4"}}>
+                                        {formatMoney(env.budget - env.spent)}
+                                    </div>
+                                    <button style={styles.spendBtn} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Add Purchase</button>
+                                </div>
+                            ))}
+                            <button style={{...styles.btn, background: "transparent", border: "2px dashed #333", color: "#888"}} onClick={() => setShowAdd(true)}>+ New Envelope</button>
+                        </>
+                    ) : (
+                        <div>
+                            <button onClick={() => setView("dashboard")} style={{color:"#a78bfa", background:"none", border:"none", cursor:"pointer", fontSize: "16px", padding: "10px 0"}}>← Back to Envelopes</button>
+                            <h2 style={{fontSize: "28px", margin: "10px 0"}}>{activeEnv?.name}</h2>
+                            <div style={{fontSize: "18px", color: (activeEnv?.budget - activeEnv?.spent) < 0 ? "#ff6b6b" : "#4ECDC4", marginBottom: "25px"}}>
+                                {formatMoney(activeEnv?.budget - activeEnv?.spent)} remaining
+                            </div>
+                            
+                            {activeEnv?.transactions?.slice().reverse().map(t => (
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center", padding: "15px"}}>
+                                    <div>
+                                        <div style={{fontWeight: "600"}}>{t.desc}</div>
+                                        <div style={{fontSize:"11px", color:"#888"}}>{t.date}</div>
+                                    </div>
+                                    <div style={{display: "flex", alignItems: "center", gap: "12px"}}>
+                                        <div style={{fontWeight: "700", color:"#ff6b6b"}}>-{formatMoney(t.amount)}</div>
+                                        <button onClick={() => handleDeleteTx(t.id, t.amount)} style={{background: "#ff4757", border: "none", borderRadius: "50%", color: "#fff", width: "24px", height: "24px", cursor: "pointer"}}>✕</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Spend/Add Modals */}
+                    {(showAdd || showSpend) && (
+                        <div style={styles.modal}>
+                            <div style={{...styles.card, width: "100%"}}>
+                                <h3 style={{marginTop: 0}}>{showAdd ? "New Envelope" : `Spend: ${activeEnv?.name}`}</h3>
+                                <input style={styles.input} placeholder={showAdd ? "Envelope Name" : "Description"} onChange={e => showAdd ? setNewEnv({...newEnv, name: e.target.value}) : setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount ($)" onChange={e => showAdd ? setNewEnv({...newEnv, budget: e.target.value}) : setNewTx({...newTx, amount: e.target.value})} />
+                                <button style={styles.btn} onClick={showAdd ? handleCreate : handleSpend}>Confirm</button>
+                                <button onClick={() => { setShowAdd(false); setShowSpend(false); }} style={{width:"100%", marginTop:"12px", background:"none", border:"none", color:"#888"}}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
