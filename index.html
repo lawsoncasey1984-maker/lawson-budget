@@ -7,6 +7,7 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment } 
@@ -22,10 +23,15 @@
             measurementId: "G-NPLMZ6JQ96"
         };
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        window.db = db;
-        window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment };
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            window.db = db;
+            window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment };
+            console.log("Firebase Initialized Successfully");
+        } catch (error) {
+            console.error("Firebase Initialization Failed:", error);
+        }
     </script>
 </head>
 <body style="margin:0; background: #0f0f13; font-family: -apple-system, sans-serif; color: #e8e8f0;">
@@ -37,6 +43,7 @@
 
         function App() {
             const [envelopes, setEnvelopes] = useState([]);
+            const [loading, setLoading] = useState(true);
             const [view, setView] = useState("dashboard");
             const [activeId, setActiveId] = useState(null);
             const [showAdd, setShowAdd] = useState(false);
@@ -50,7 +57,12 @@
             const hasCheckedReset = useRef(false);
 
             useEffect(() => {
-                if (!window.db) return;
+                if (!window.db) {
+                    // Wait a moment for Firebase to attach to window
+                    const timer = setTimeout(() => { if(!window.db) alert("Database connection timeout. Refresh page."); }, 5000);
+                    return () => clearTimeout(timer);
+                }
+                
                 const unsub = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), async (snapshot) => {
                     const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                     
@@ -76,6 +88,10 @@
                         }
                     }
                     setEnvelopes(docs);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Snapshot Error:", error);
+                    setLoading(false);
                 });
                 return () => unsub();
             }, []);
@@ -94,14 +110,12 @@
 
             async function handleUpdateName() {
                 if (!editEnv.name) return;
-                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), {
-                    name: editEnv.name
-                });
+                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { name: editEnv.name });
                 setShowEdit(false);
             }
 
             async function handleDeleteEnv() {
-                if (confirm(`Are you sure you want to delete "${editEnv.name}"? All history will be lost.`)) {
+                if (confirm(`Delete "${editEnv.name}"?`)) {
                     await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id));
                     setShowEdit(false);
                     setView("dashboard");
@@ -124,28 +138,26 @@
             }
 
             const styles = {
-                app: { padding: "20px", maxWidth: "500px", margin: "0 auto", paddingBottom: "100px" },
-                header: { textAlign: "center", marginBottom: "25px" },
-                totalBox: { background: "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)", padding: "24px", borderRadius: "20px", marginBottom: "25px", textAlign: "center", color: "#0f0f13" },
+                app: { padding: "20px", maxWidth: "500px", margin: "0 auto" },
+                loading: { height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
                 card: { background: "#1e1e2e", padding: "20px", borderRadius: "16px", marginBottom: "15px", border: "1px solid #333", position: "relative" },
-                btn: { width: "100%", padding: "14px", background: "#a78bfa", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold", fontSize: "16px", cursor: "pointer" },
-                secondaryBtn: { width: "100%", padding: "12px", background: "transparent", border: "1px solid #444", color: "#888", borderRadius: "10px", marginTop: "10px", cursor: "pointer" },
-                dangerBtn: { width: "100%", padding: "12px", background: "rgba(255, 71, 87, 0.1)", border: "1px solid #ff4757", color: "#ff4757", borderRadius: "10px", marginTop: "20px", cursor: "pointer", fontWeight: "600" },
-                input: { width: "100%", padding: "14px", marginBottom: "12px", borderRadius: "10px", border: "1px solid #444", background: "#000", color: "#fff", boxSizing: "border-box", fontSize: "16px" },
-                modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 100 },
-                settingsIcon: { background: "none", border: "none", color: "#555", fontSize: "20px", cursor: "pointer", padding: "5px" }
+                btn: { width: "100%", padding: "14px", background: "#a78bfa", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold", cursor: "pointer" },
+                input: { width: "100%", padding: "14px", marginBottom: "12px", borderRadius: "10px", border: "1px solid #444", background: "#000", color: "#fff", boxSizing: "border-box" },
+                modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 100 }
             };
+
+            if (loading) return <div style={styles.loading}><h2>Loading Lawson Budget...</h2></div>;
 
             return (
                 <div style={styles.app}>
-                    <header style={styles.header}>
-                        <h1 style={{margin:0, fontSize: "28px"}}>Lawson Budget</h1>
+                    <header style={{textAlign: "center", marginBottom: "25px"}}>
+                        <h1 style={{margin:0}}>✦ Lawson Budget</h1>
                     </header>
 
                     {view === "dashboard" ? (
                         <>
-                            <div style={styles.totalBox}>
-                                <div style={{fontSize: "13px", fontWeight: "600", opacity: 0.8, textTransform: "uppercase"}}>Available</div>
+                            <div style={{background: "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)", padding: "24px", borderRadius: "20px", marginBottom: "25px", textAlign: "center", color: "#0f0f13"}}>
+                                <div style={{fontSize: "13px", fontWeight: "600", opacity: 0.8}}>AVAILABLE</div>
                                 <div style={{fontSize: "42px", fontWeight: "900"}}>{formatMoney(totalRemaining)}</div>
                             </div>
 
@@ -153,7 +165,7 @@
                                 <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
                                     <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                                         <span style={{fontWeight:"bold", fontSize:"18px"}}>{env.name}</span>
-                                        <button style={styles.settingsIcon} onClick={(e) => { 
+                                        <button style={{background:"none", border:"none", cursor:"pointer"}} onClick={(e) => { 
                                             e.stopPropagation(); 
                                             setEditEnv({id: env.id, name: env.name});
                                             setShowEdit(true);
@@ -169,65 +181,55 @@
                         </>
                     ) : (
                         <div>
-                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                                <button onClick={() => setView("dashboard")} style={{color:"#a78bfa", background:"none", border:"none", fontSize: "16px"}}>← Back</button>
-                                <button style={styles.settingsIcon} onClick={() => { 
-                                    setEditEnv({id: activeEnv.id, name: activeEnv.name});
-                                    setShowEdit(true);
-                                }}>⚙️ Settings</button>
+                            <div style={{display: 'flex', justifyContent: 'space-between'}}>
+                                <button onClick={() => setView("dashboard")} style={{color:"#a78bfa", background:"none", border:"none"}}>← Back</button>
+                                <button style={{background:"none", border:"none"}} onClick={() => { setEditEnv({id: activeEnv.id, name: activeEnv.name}); setShowEdit(true); }}>⚙️ Settings</button>
                             </div>
                             <h2 style={{fontSize: "28px", margin: "15px 0"}}>{activeEnv?.name}</h2>
                             <div style={{fontSize: "20px", color: (activeEnv?.budget - activeEnv?.spent) < 0 ? "#ff6b6b" : "#4ECDC4", marginBottom: "20px"}}>{formatMoney(activeEnv?.budget - activeEnv?.spent)} left</div>
                             
                             {activeEnv?.transactions?.slice().reverse().map(t => (
-                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center", padding: "15px"}}>
-                                    <div>
-                                        <div style={{fontWeight: "600"}}>{t.desc}</div>
-                                        <div style={{fontSize:"11px", color:"#888"}}>{t.date}</div>
-                                    </div>
-                                    <div style={{fontWeight: "700", color:"#ff6b6b"}}>-{formatMoney(t.amount)}</div>
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", padding: "15px"}}>
+                                    <div>{t.desc}<div style={{fontSize:"10px", color:"#888"}}>{t.date}</div></div>
+                                    <div style={{color:"#ff6b6b", fontWeight:"bold"}}>-{formatMoney(t.amount)}</div>
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    {/* Edit Name / Delete Modal */}
+                    {/* Modals are simplified for reliability */}
                     {showEdit && (
                         <div style={styles.modal}>
                             <div style={{...styles.card, width: "100%"}}>
-                                <h3 style={{marginTop: 0}}>Envelope Settings</h3>
-                                <label style={{fontSize: "12px", color: "#888"}}>Rename Envelope</label>
+                                <h3>Settings</h3>
                                 <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
-                                <button style={styles.btn} onClick={handleUpdateName}>Save Name</button>
-                                <button style={styles.secondaryBtn} onClick={() => setShowEdit(false)}>Cancel</button>
-                                
-                                <button style={styles.dangerBtn} onClick={handleDeleteEnv}>Delete Envelope Permanently</button>
+                                <button style={styles.btn} onClick={handleUpdateName}>Save</button>
+                                <button style={{...styles.btn, background: "red", marginTop: "10px"}} onClick={handleDeleteEnv}>Delete Envelope</button>
+                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowEdit(false)}>Cancel</button>
                             </div>
                         </div>
                     )}
 
-                    {/* Add Envelope Modal */}
                     {showAdd && (
                         <div style={styles.modal}>
                             <div style={{...styles.card, width: "100%"}}>
-                                <h3 style={{marginTop: 0}}>New Envelope</h3>
+                                <h3>New Envelope</h3>
                                 <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Weekly Budget ($)" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
                                 <button style={styles.btn} onClick={handleCreate}>Create</button>
-                                <button style={styles.secondaryBtn} onClick={() => setShowAdd(false)}>Cancel</button>
+                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowAdd(false)}>Cancel</button>
                             </div>
                         </div>
                     )}
 
-                    {/* Spend Modal */}
                     {showSpend && (
                         <div style={styles.modal}>
                             <div style={{...styles.card, width: "100%"}}>
-                                <h3 style={{marginTop: 0}}>Spend: {activeEnv?.name}</h3>
+                                <h3>Spend: {activeEnv?.name}</h3>
                                 <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount ($)" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
-                                <button style={styles.btn} onClick={handleSpend}>Confirm Purchase</button>
-                                <button style={styles.secondaryBtn} onClick={() => setShowSpend(false)}>Cancel</button>
+                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                <button style={styles.btn} onClick={handleSpend}>Confirm</button>
+                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowSpend(false)}>Cancel</button>
                             </div>
                         </div>
                     )}
