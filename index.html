@@ -162,4 +162,81 @@
                                     <div style={{fontSize: "36px", margin: "12px 0", fontWeight: "800", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#4ECDC4"}}>
                                         {formatMoney(env.budget - env.spent)}
                                     </div>
-                                    <button style={{...
+                                    <button style={{...styles.btn, background: "#4ECDC4", color: "#0f0f13", width: "auto", padding: "8px 15px"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Add Purchase</button>
+                                </div>
+                            ))}
+                            <button style={{...styles.btn, background: "transparent", border: "2px dashed #333", color: "#888"}} onClick={() => setShowAdd(true)}>+ New Envelope</button>
+                        </>
+                    ) : (
+                        <div>
+                            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                                <button onClick={() => setView("dashboard")} style={{color:"#a78bfa", background:"none", border:"none", fontSize: "16px"}}>← Back</button>
+                                <button style={styles.settingsIcon} onClick={() => { 
+                                    setEditEnv({id: activeEnv.id, name: activeEnv.name});
+                                    setShowEdit(true);
+                                }}>⚙️ Settings</button>
+                            </div>
+                            <h2 style={{fontSize: "28px", margin: "15px 0"}}>{activeEnv?.name}</h2>
+                            <div style={{fontSize: "20px", color: (activeEnv?.budget - activeEnv?.spent) < 0 ? "#ff6b6b" : "#4ECDC4", marginBottom: "20px"}}>{formatMoney(activeEnv?.budget - activeEnv?.spent)} left</div>
+                            
+                            {activeEnv?.transactions?.slice().reverse().map(t => (
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center", padding: "15px"}}>
+                                    <div>
+                                        <div style={{fontWeight: "600"}}>{t.desc}</div>
+                                        <div style={{fontSize:"11px", color:"#888"}}>{t.date}</div>
+                                    </div>
+                                    <div style={{fontWeight: "700", color:"#ff6b6b"}}>-{formatMoney(t.amount)}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Edit Name / Delete Modal */}
+                    {showEdit && (
+                        <div style={styles.modal}>
+                            <div style={{...styles.card, width: "100%"}}>
+                                <h3 style={{marginTop: 0}}>Envelope Settings</h3>
+                                <label style={{fontSize: "12px", color: "#888"}}>Rename Envelope</label>
+                                <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
+                                <button style={styles.btn} onClick={handleUpdateName}>Save Name</button>
+                                <button style={styles.secondaryBtn} onClick={() => setShowEdit(false)}>Cancel</button>
+                                
+                                <button style={styles.dangerBtn} onClick={handleDeleteEnv}>Delete Envelope Permanently</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Envelope Modal */}
+                    {showAdd && (
+                        <div style={styles.modal}>
+                            <div style={{...styles.card, width: "100%"}}>
+                                <h3 style={{marginTop: 0}}>New Envelope</h3>
+                                <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Weekly Budget ($)" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
+                                <button style={styles.btn} onClick={handleCreate}>Create</button>
+                                <button style={styles.secondaryBtn} onClick={() => setShowAdd(false)}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Spend Modal */}
+                    {showSpend && (
+                        <div style={styles.modal}>
+                            <div style={{...styles.card, width: "100%"}}>
+                                <h3 style={{marginTop: 0}}>Spend: {activeEnv?.name}</h3>
+                                <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount ($)" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                <button style={styles.btn} onClick={handleSpend}>Confirm Purchase</button>
+                                <button style={styles.secondaryBtn} onClick={() => setShowSpend(false)}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
