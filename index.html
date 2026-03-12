@@ -34,7 +34,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
         const formatMoney = (n) => "$" + Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         const CATEGORIES = ["Daily", "Bills", "Fun", "Household", "Savings", "Other"];
         const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4"];
@@ -57,18 +57,34 @@
             const [newBill, setNewBill] = useState({ name: "", amount: "", dueDay: "" });
             const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: 0, category: "Daily" });
 
-            const activeEnv = envelopes.find(e => e.id === activeId);
-
+            // Robust data fetching
             useEffect(() => {
                 if (!window.db) return;
-                const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snap) => setEnvelopes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-                const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snap) => setBills(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snap) => {
+                    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setEnvelopes(data);
+                });
+                const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snap) => {
+                    setBills(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
                 const unsubBal = window.fs.onSnapshot(window.fs.doc(window.db, "meta", "balances"), (doc) => {
                     if (doc.exists()) setBalances(doc.data());
                     setLoading(false);
                 });
                 return () => { unsubEnv(); unsubBills(); unsubBal(); };
             }, []);
+
+            // Dynamic grouping: Ensures all envelopes show up regardless of category string
+            const groupedEnvelopes = useMemo(() => {
+                return envelopes.reduce((acc, env) => {
+                    const cat = env.category || "Other";
+                    if (!acc[cat]) acc[cat] = [];
+                    acc[cat].push(env);
+                    return acc;
+                }, {});
+            }, [envelopes]);
+
+            const activeEnv = envelopes.find(e => e.id === activeId);
 
             const getWeekFromDay = (day) => {
                 const d = parseInt(day);
@@ -133,7 +149,7 @@
                 input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", fontSize: "16px", boxSizing: "border-box" }
             };
 
-            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing...</h3></div>;
+            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing Lawson...</h3></div>;
 
             return (
                 <div style={styles.app}>
@@ -148,9 +164,9 @@
                     {view === "dashboard" && (
                         <>
                             <div style={styles.balGrid}>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>BANK</div><div style={{fontWeight:"700"}}>{formatMoney(balances.bank)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>CREDIT</div><div style={{fontWeight:"700", color:"#ff6b6b"}}>{formatMoney(balances.credit)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>BANK</div><div style={{fontWeight:"700", fontSize:"13px"}}>{formatMoney(balances.bank)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>CREDIT</div><div style={{fontWeight:"700", fontSize:"13px", color:"#ff6b6b"}}>{formatMoney(balances.credit)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", fontSize:"13px", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
                             </div>
                             <div style={styles.totalCard}>
                                 <div style={{fontSize: "12px", fontWeight: "600", opacity: 0.8}}>REMAINING CASH</div>
@@ -158,10 +174,11 @@
                             </div>
                             <button onClick={() => setShowAdd(true)} style={{width:"100%", padding:"14px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginBottom:"20px"}}>+ New Envelope</button>
                             
-                            {CATEGORIES.map(cat => (
-                                <div key={cat}>
-                                    {envelopes.filter(e => e.category === cat).length > 0 && <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", margin:"15px 0 10px", letterSpacing:"1px"}}>{cat.toUpperCase()}</div>}
-                                    {envelopes.filter(e => e.category === cat).map(env => (
+                            {/* Improved Rendering: Loops through grouped data directly */}
+                            {Object.entries(groupedEnvelopes).map(([category, items]) => (
+                                <div key={category}>
+                                    <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", margin:"15px 0 10px", letterSpacing:"1px"}}>{category.toUpperCase()}</div>
+                                    {items.map(env => (
                                         <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
                                             <div style={{display:"flex", justifyContent:"space-between", fontWeight:"700"}}>
                                                 <span>{env.name}</span>
@@ -190,7 +207,7 @@
                                             <div style={{fontWeight:"600"}}>{bill.dueDay} - {bill.name}</div>
                                             <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                                 <div style={{fontWeight:"700"}}>{formatMoney(bill.amount)}</div>
-                                                <button onClick={() => confirm("Delete?") && window.fs.deleteDoc(window.fs.doc(window.db, "bills", bill.id))} style={{background: 'none', border: 'none', color: '#ff6b6b', fontSize: '18px'}}>✕</button>
+                                                <button onClick={(e) => { e.stopPropagation(); if(confirm("Delete?")) window.fs.deleteDoc(window.fs.doc(window.db, "bills", bill.id))}} style={{background: 'none', border: 'none', color: '#ff6b6b', fontSize: '18px'}}>✕</button>
                                             </div>
                                         </div>
                                     ))}
@@ -199,7 +216,7 @@
                         </div>
                     )}
 
-                    {/* All Modals */}
+                    {/* Modals */}
                     {showBillAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
@@ -207,7 +224,7 @@
                                 <input style={styles.input} placeholder="Bill Name" value={newBill.name} onChange={e => setNewBill({...newBill, name: e.target.value})} />
                                 <input style={styles.input} type="number" placeholder="Amount" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} />
                                 <input style={styles.input} type="number" placeholder="Due Day (1-31)" value={newBill.dueDay} onChange={e => setNewBill({...newBill, dueDay: e.target.value})} />
-                                {newBill.dueDay && <div style={{color:"#6366f1", marginBottom:"15px", fontSize:"12px", fontWeight:"600"}}>Categorized as: {getWeekFromDay(newBill.dueDay)}</div>}
+                                {newBill.dueDay && <div style={{color:"#6366f1", marginBottom:"15px", fontSize:"12px", fontWeight:"600"}}>Auto-assigned: {getWeekFromDay(newBill.dueDay)}</div>}
                                 <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleAddBill}>Save Bill</button>
                                 <button onClick={() => setShowBillAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
@@ -233,8 +250,8 @@
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
                                 <h3>Spend: {activeEnv.name}</h3>
-                                <input style={styles.input} placeholder="What for?" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                <input style={styles.input} placeholder="What for?" value={newTx.desc} onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} />
                                 <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleSpend}>Confirm</button>
                                 <button onClick={() => setShowSpend(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
