@@ -54,47 +54,31 @@
             
             const [newEnv, setNewEnv] = useState({ name: "", budget: "", category: "Daily" });
             const [newTx, setNewTx] = useState({ desc: "", amount: "" });
-            const [newBill, setNewBill] = useState({ name: "", amount: "", week: "Week 1", dueDay: "" });
+            const [newBill, setNewBill] = useState({ name: "", amount: "", dueDay: "" });
             const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: 0, category: "Daily" });
 
-            // Derived State: Find the active envelope based on the ID
             const activeEnv = envelopes.find(e => e.id === activeId);
 
             useEffect(() => {
                 if (!window.db) return;
-                
-                const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snapshot) => {
-                    setEnvelopes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-                });
-
-                const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snapshot) => {
-                    setBills(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-                });
-
+                const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snap) => setEnvelopes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+                const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snap) => setBills(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
                 const unsubBal = window.fs.onSnapshot(window.fs.doc(window.db, "meta", "balances"), (doc) => {
                     if (doc.exists()) setBalances(doc.data());
                     setLoading(false);
                 });
-
                 return () => { unsubEnv(); unsubBills(); unsubBal(); };
             }, []);
 
-            const totalRemaining = envelopes.reduce((acc, env) => acc + ((env.budget || 0) - (env.spent || 0)), 0);
-            const groupedEnvelopes = envelopes.reduce((acc, env) => {
-                const cat = env.category || "Other";
-                if (!acc[cat]) acc[cat] = [];
-                acc[cat].push(env);
-                return acc;
-            }, {});
-
-            const getCurrentWeek = () => {
-                const day = new Date().getDate();
-                if (day <= 7) return "Week 1";
-                if (day <= 14) return "Week 2";
-                if (day <= 21) return "Week 3";
+            const getWeekFromDay = (day) => {
+                const d = parseInt(day);
+                if (d <= 7) return "Week 1";
+                if (d <= 14) return "Week 2";
+                if (d <= 21) return "Week 3";
                 return "Week 4";
             };
-            const currentWeekTag = getCurrentWeek();
+
+            const getCurrentWeekTag = () => getWeekFromDay(new Date().getDate());
 
             async function updateBalance(key, val) {
                 const newBals = { ...balances, [key]: parseFloat(val) || 0 };
@@ -103,12 +87,9 @@
             }
 
             async function handleUpdateEnv() {
-                const envRef = window.fs.doc(window.db, "envelopes", editEnv.id);
-                await window.fs.updateDoc(envRef, { 
-                    name: editEnv.name,
-                    baseBudget: parseFloat(editEnv.baseBudget) || 0,
-                    budget: parseFloat(editEnv.baseBudget) || 0,
-                    category: editEnv.category
+                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { 
+                    name: editEnv.name, baseBudget: parseFloat(editEnv.baseBudget) || 0,
+                    budget: parseFloat(editEnv.baseBudget) || 0, category: editEnv.category
                 });
                 setShowSettings(false);
             }
@@ -116,24 +97,18 @@
             async function handleAddBill() {
                 if(!newBill.name || !newBill.amount || !newBill.dueDay) return;
                 await window.fs.addDoc(window.fs.collection(window.db, "bills"), { 
-                    ...newBill, 
-                    amount: parseFloat(newBill.amount),
-                    dueDay: parseInt(newBill.dueDay)
+                    name: newBill.name, amount: parseFloat(newBill.amount), 
+                    dueDay: parseInt(newBill.dueDay), week: getWeekFromDay(newBill.dueDay)
                 });
                 setShowBillAdd(false);
-                setNewBill({ name: "", amount: "", week: "Week 1", dueDay: "" });
-            }
-
-            async function deleteBill(id) {
-                if(confirm("Delete this bill?")) await window.fs.deleteDoc(window.fs.doc(window.db, "bills", id));
+                setNewBill({ name: "", amount: "", dueDay: "" });
             }
 
             async function handleCreate() {
                 if(!newEnv.name || !newEnv.budget) return;
                 const b = parseFloat(newEnv.budget);
                 await window.fs.addDoc(window.fs.collection(window.db, "envelopes"), {
-                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, 
-                    category: newEnv.category, transactions: [], lastRefill: new Date().toLocaleDateString()
+                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, category: newEnv.category, transactions: []
                 });
                 setShowAdd(false);
                 setNewEnv({ name: "", budget: "", category: "Daily" });
@@ -141,10 +116,9 @@
 
             async function handleSpend() {
                 if (!activeId || !newTx.amount) return;
-                const amt = parseFloat(newTx.amount);
                 await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
-                    spent: window.fs.increment(amt),
-                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc || "No Description", amount: amt, date: new Date().toLocaleDateString() })
+                    spent: window.fs.increment(parseFloat(newTx.amount)),
+                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc || "Expense", amount: parseFloat(newTx.amount), date: new Date().toLocaleDateString() })
                 });
                 setShowSpend(false);
                 setNewTx({ desc: "", amount: "" });
@@ -156,7 +130,7 @@
                 balItem: { background: "rgba(255,255,255,0.05)", padding: "12px", borderRadius: "15px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" },
                 totalCard: { background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)", padding: "24px", borderRadius: "20px", marginBottom: "20px" },
                 card: { background: "rgba(255, 255, 255, 0.04)", padding: "20px", borderRadius: "20px", marginBottom: "12px", border: "1px solid rgba(255, 255, 255, 0.08)" },
-                input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", boxSizing: "border-box", fontSize: "16px" }
+                input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", fontSize: "16px", boxSizing: "border-box" }
             };
 
             if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing...</h3></div>;
@@ -174,28 +148,24 @@
                     {view === "dashboard" && (
                         <>
                             <div style={styles.balGrid}>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>BANK</div><div style={{fontWeight:"700", fontSize:"13px"}}>{formatMoney(balances.bank)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>CREDIT</div><div style={{fontWeight:"700", fontSize:"13px", color:"#ff6b6b"}}>{formatMoney(balances.credit)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", fontSize:"13px", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>BANK</div><div style={{fontWeight:"700"}}>{formatMoney(balances.bank)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>CREDIT</div><div style={{fontWeight:"700", color:"#ff6b6b"}}>{formatMoney(balances.credit)}</div></div>
+                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
                             </div>
                             <div style={styles.totalCard}>
                                 <div style={{fontSize: "12px", fontWeight: "600", opacity: 0.8}}>REMAINING CASH</div>
-                                <div style={{fontSize: "36px", fontWeight: "800", marginTop: "4px"}}>{formatMoney(totalRemaining)}</div>
+                                <div style={{fontSize: "36px", fontWeight: "800"}}>{formatMoney(envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0))}</div>
                             </div>
                             <button onClick={() => setShowAdd(true)} style={{width:"100%", padding:"14px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginBottom:"20px"}}>+ New Envelope</button>
                             
-                            {Object.entries(groupedEnvelopes).map(([category, items]) => (
-                                <div key={category}>
-                                    <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", marginBottom:"10px", letterSpacing:"1px"}}>{category.toUpperCase()}</div>
-                                    {items.map(env => (
+                            {CATEGORIES.map(cat => (
+                                <div key={cat}>
+                                    {envelopes.filter(e => e.category === cat).length > 0 && <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", margin:"15px 0 10px", letterSpacing:"1px"}}>{cat.toUpperCase()}</div>}
+                                    {envelopes.filter(e => e.category === cat).map(env => (
                                         <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
-                                            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                                                <span style={{fontWeight:"700"}}>{env.name}</span>
-                                                <button style={{background:"none", border:"none", padding: "5px", fontSize:"16px"}} onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditEnv({id: env.id, name: env.name, baseBudget: env.baseBudget, category: env.category});
-                                                    setShowSettings(true);
-                                                }}>⚙️</button>
+                                            <div style={{display:"flex", justifyContent:"space-between", fontWeight:"700"}}>
+                                                <span>{env.name}</span>
+                                                <button style={{background:"none", border:"none", fontSize:"16px"}} onClick={(e) => { e.stopPropagation(); setEditEnv(env); setShowSettings(true); }}>⚙️</button>
                                             </div>
                                             <div style={{fontSize: "26px", fontWeight: "800", margin: "10px 0", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#fff"}}>{formatMoney(env.budget - env.spent)}</div>
                                             <button style={{background: "#fff", color: "#000", border: "none", borderRadius: "8px", padding: "6px 14px", fontWeight: "700", fontSize:"12px"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Spend</button>
@@ -210,17 +180,17 @@
                         <div>
                             <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px"}}>
                                 <h2 style={{margin:0}}>Monthly Bills</h2>
-                                <button onClick={() => setShowBillAdd(true)} style={{background:"#6366f1", border:"none", color:"#fff", padding:"8px 15px", borderRadius:"10px", fontWeight:"600"}}>+ Add Bill</button>
+                                <button onClick={() => setShowBillAdd(true)} style={{background:"#6366f1", color:"#fff", padding:"8px 15px", borderRadius:"10px", border:"none", fontWeight:"600"}}>+ Add Bill</button>
                             </div>
                             {WEEKS.map(week => (
-                                <div key={week} style={{marginBottom:"25px", borderLeft: week === currentWeekTag ? "3px solid #a855f7" : "none", paddingLeft: "10px"}}>
-                                    <div style={{color: week === currentWeekTag ? "#a855f7" : "#555", fontWeight:"800", fontSize:"13px"}}>{week.toUpperCase()}</div>
+                                <div key={week} style={{marginBottom:"25px", borderLeft: week === getCurrentWeekTag() ? "3px solid #a855f7" : "none", paddingLeft: "10px"}}>
+                                    <div style={{color: week === getCurrentWeekTag() ? "#a855f7" : "#555", fontWeight:"800", fontSize:"13px"}}>{week.toUpperCase()}</div>
                                     {bills.filter(b => b.week === week).sort((a,b) => a.dueDay - b.dueDay).map(bill => (
-                                        <div key={bill.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems:"center", padding:"15px", marginBottom:"8px"}}>
+                                        <div key={bill.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems:"center", padding:"15px"}}>
                                             <div style={{fontWeight:"600"}}>{bill.dueDay} - {bill.name}</div>
                                             <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                                 <div style={{fontWeight:"700"}}>{formatMoney(bill.amount)}</div>
-                                                <button onClick={() => deleteBill(bill.id)} style={{background: 'none', border: 'none', color: '#ff6b6b', fontSize: '18px'}}>✕</button>
+                                                <button onClick={() => confirm("Delete?") && window.fs.deleteDoc(window.fs.doc(window.db, "bills", bill.id))} style={{background: 'none', border: 'none', color: '#ff6b6b', fontSize: '18px'}}>✕</button>
                                             </div>
                                         </div>
                                     ))}
@@ -229,54 +199,24 @@
                         </div>
                     )}
 
-                    {/* Modals */}
+                    {/* All Modals */}
                     {showBillAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
                                 <h3 style={{marginTop:0}}>Add Monthly Bill</h3>
                                 <input style={styles.input} placeholder="Bill Name" value={newBill.name} onChange={e => setNewBill({...newBill, name: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount ($)" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} />
                                 <input style={styles.input} type="number" placeholder="Due Day (1-31)" value={newBill.dueDay} onChange={e => setNewBill({...newBill, dueDay: e.target.value})} />
-                                <select style={styles.input} value={newBill.week} onChange={e => setNewBill({...newBill, week: e.target.value})}>
-                                    {WEEKS.map(w => <option key={w} value={w}>{w}</option>)}
-                                </select>
+                                {newBill.dueDay && <div style={{color:"#6366f1", marginBottom:"15px", fontSize:"12px", fontWeight:"600"}}>Categorized as: {getWeekFromDay(newBill.dueDay)}</div>}
                                 <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleAddBill}>Save Bill</button>
                                 <button onClick={() => setShowBillAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
                         </div>
                     )}
 
-                    {showSettings && (
-                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
-                                <h3 style={{marginTop:0}}>{view === "settings" ? "Global Settings" : "Envelope Settings"}</h3>
-                                {view === "settings" ? (
-                                    <>
-                                        <label style={{fontSize:"11px", color:"#888"}}>BANK ACCOUNT</label>
-                                        <input style={styles.input} type="number" value={balances.bank} onChange={e => updateBalance("bank", e.target.value)} />
-                                        <label style={{fontSize:"11px", color:"#888"}}>CREDIT CARD</label>
-                                        <input style={styles.input} type="number" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} />
-                                        <label style={{fontSize:"11px", color:"#888"}}>SAVINGS</label>
-                                        <input style={styles.input} type="number" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} />
-                                        <button onClick={() => { setShowSettings(false); setView("dashboard"); }} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700"}}>Done</button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
-                                        <label style={{fontSize:"11px", color:"#888"}}>WEEKLY LIMIT ($)</label>
-                                        <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
-                                        <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleUpdateEnv}>Save Changes</button>
-                                        <button onClick={async () => { if(confirm("Delete envelope?")) { await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id)); setShowSettings(false); } }} style={{width:"100%", padding:"16px", background:"rgba(255,107,107,0.1)", color:"#ff6b6b", border:"none", borderRadius:"15px", fontWeight:"800", marginTop:"10px"}}>Delete Envelope</button>
-                                    </>
-                                )}
-                                <button onClick={() => { setShowSettings(false); if(view === "settings") setView("dashboard"); }} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
                     {showAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
                                 <h3>New Envelope</h3>
                                 <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
                                 <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
@@ -291,12 +231,36 @@
 
                     {showSpend && activeEnv && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
-                                <h3>Spend from {activeEnv.name}</h3>
-                                <input style={styles.input} placeholder="Description" value={newTx.desc} onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
+                                <h3>Spend: {activeEnv.name}</h3>
+                                <input style={styles.input} placeholder="What for?" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
                                 <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleSpend}>Confirm</button>
                                 <button onClick={() => setShowSpend(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {showSettings && (
+                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
+                                <h3>{view === "settings" ? "Balances" : "Edit Envelope"}</h3>
+                                {view === "settings" ? (
+                                    <>
+                                        <input style={styles.input} type="number" value={balances.bank} onChange={e => updateBalance("bank", e.target.value)} />
+                                        <input style={styles.input} type="number" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} />
+                                        <input style={styles.input} type="number" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} />
+                                        <button onClick={() => { setShowSettings(false); setView("dashboard"); }} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"700"}}>Save & Done</button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
+                                        <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
+                                        <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleUpdateEnv}>Update</button>
+                                        <button onClick={async () => confirm("Delete?") && (await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id)), setShowSettings(false))} style={{width:"100%", padding:"16px", color:"#ff6b6b", border:"none", fontWeight:"800", marginTop:"10px", background:"none"}}>Delete Envelope</button>
+                                    </>
+                                )}
+                                <button onClick={() => { setShowSettings(false); if(view === "settings") setView("dashboard"); }} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
                         </div>
                     )}
@@ -306,23 +270,11 @@
                             <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", marginBottom:"20px", fontWeight:"600"}}>← Back</button>
                             <h2>{activeEnv.name} History</h2>
                             {activeEnv.transactions?.slice().reverse().map(t => (
-                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: 'center'}}>
-                                    <div>
-                                        <div style={{fontWeight: '600'}}>{t.desc}</div>
-                                        <div style={{fontSize: '11px', color: '#888'}}>{t.date}</div>
-                                    </div>
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between"}}>
+                                    <div><div style={{fontWeight: '600'}}>{t.desc}</div><div style={{fontSize: '11px', color: '#555'}}>{t.date}</div></div>
                                     <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                         <div style={{color:"#ff6b6b", fontWeight:"800"}}>-{formatMoney(t.amount)}</div>
-                                        <button onClick={async (e) => {
-                                            e.stopPropagation();
-                                            if(confirm("Delete transaction?")) {
-                                                const envRef = window.fs.doc(window.db, "envelopes", activeEnv.id);
-                                                await window.fs.updateDoc(envRef, {
-                                                    spent: window.fs.increment(-t.amount),
-                                                    transactions: activeEnv.transactions.filter(item => item.id !== t.id)
-                                                });
-                                            }
-                                        }} style={{background:'none', border:'none', color:'#444'}}>✕</button>
+                                        <button onClick={async () => confirm("Delete?") && await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeEnv.id), { spent: window.fs.increment(-t.amount), transactions: activeEnv.transactions.filter(i => i.id !== t.id) })} style={{background:'none', border:'none', color:'#444'}}>✕</button>
                                     </div>
                                 </div>
                             ))}
@@ -331,8 +283,7 @@
                 </div>
             );
         }
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
 </html>
