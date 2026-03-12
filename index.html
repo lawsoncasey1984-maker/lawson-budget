@@ -65,13 +65,24 @@
             const activeEnv = envelopes.find(e => e.id === activeId);
             const totalRemaining = envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0);
             
-            // Grouping logic for dashboard
             const groupedEnvelopes = envelopes.reduce((acc, env) => {
                 const cat = env.category || "Other";
                 if (!acc[cat]) acc[cat] = [];
                 acc[cat].push(env);
                 return acc;
             }, {});
+
+            async function handleDeleteTx(txId, amount) {
+                if (!confirm("Delete this transaction? The amount will be credited back to the envelope.")) return;
+                
+                const envRef = window.fs.doc(window.db, "envelopes", activeId);
+                const updatedTransactions = activeEnv.transactions.filter(t => t.id !== txId);
+                
+                await window.fs.updateDoc(envRef, {
+                    spent: window.fs.increment(-amount),
+                    transactions: updatedTransactions
+                });
+            }
 
             async function handleRefillAll() {
                 if (!confirm("Refill ALL envelopes and rollover remaining balances?")) return;
@@ -105,6 +116,7 @@
                     transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc, amount: amt, date: new Date().toLocaleDateString() })
                 });
                 setShowSpend(false);
+                setNewTx({ desc: "", amount: "" });
             }
 
             const styles = {
@@ -113,10 +125,10 @@
                 card: { background: "rgba(255, 255, 255, 0.04)", backdropFilter: "blur(10px)", padding: "20px", borderRadius: "20px", marginBottom: "16px", border: "1px solid rgba(255, 255, 255, 0.08)" },
                 categoryHeader: { fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#6366f1", fontWeight: "800", margin: "24px 0 12px 8px" },
                 input: { width: "100%", padding: "16px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "12px", fontSize: "16px", outline: "none" },
-                select: { width: "100%", padding: "16px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "20px", fontSize: "16px" }
+                txDeleteBtn: { background: "rgba(239, 68, 68, 0.15)", border: "none", color: "#ef4444", borderRadius: "8px", padding: "8px 12px", fontSize: "14px", fontWeight: "700", cursor: "pointer", marginLeft: "12px" }
             };
 
-            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing Lawson Budget...</h3></div>;
+            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing...</h3></div>;
 
             return (
                 <div style={styles.app}>
@@ -153,7 +165,25 @@
                                 </div>
                             ))}
                         </>
-                    ) : view === "stats" ? (
+                    ) : view === "details" ? (
+                        <div>
+                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", fontWeight:"600", marginBottom: "24px", fontSize: "16px"}}>← Dashboard</button>
+                            <h2 style={{fontSize: "32px", margin: "0 0 8px 0"}}>{activeEnv?.name}</h2>
+                            <p style={{color: "#71717a", marginBottom: "32px"}}>{formatMoney(activeEnv?.budget - activeEnv?.spent)} remaining</p>
+                            
+                            <h3 style={{fontSize: "14px", color: "#52525b", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "16px"}}>Transactions</h3>
+                            {activeEnv?.transactions?.slice().reverse().map(t => (
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center", marginBottom: "12px", padding: "16px"}}>
+                                    <div style={{flex: 1}}>
+                                        <div style={{fontWeight: "600"}}>{t.desc}</div>
+                                        <div style={{fontSize:"12px", color:"#71717a"}}>{t.date}</div>
+                                    </div>
+                                    <div style={{fontWeight: "700", color: "#ef4444"}}>-{formatMoney(t.amount)}</div>
+                                    <button style={styles.txDeleteBtn} onClick={() => handleDeleteTx(t.id, t.amount)}>✕</button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
                         <div>
                              <h2 style={{fontSize: "28px", marginBottom: "24px"}}>Category Spending</h2>
                              {Object.entries(groupedEnvelopes).map(([category, items]) => {
@@ -173,17 +203,6 @@
                                  );
                              })}
                         </div>
-                    ) : (
-                        <div>
-                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", fontWeight:"600", marginBottom: "24px"}}>← Dashboard</button>
-                            <h2 style={{fontSize: "32px", margin: "0 0 8px 0"}}>{activeEnv?.name}</h2>
-                            {activeEnv?.transactions?.slice().reverse().map(t => (
-                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center"}}>
-                                    <div><div style={{fontWeight: "600"}}>{t.desc}</div><div style={{fontSize:"12px", color:"#71717a"}}>{t.date}</div></div>
-                                    <div style={{fontWeight: "700", color: "#ef4444"}}>-{formatMoney(t.amount)}</div>
-                                </div>
-                            ))}
-                        </div>
                     )}
 
                     {/* Modals for Add/Spend/Settings */}
@@ -194,7 +213,7 @@
                                     <h3 style={{marginTop: 0, fontSize: "24px"}}>New Envelope</h3>
                                     <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
                                     <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
-                                    <select style={styles.select} value={newEnv.category} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
+                                    <select style={{width:"100%", padding:"16px", background:"#000", border:"1px solid #333", color:"#fff", borderRadius:"12px", marginBottom:"20px", fontSize:"16px"}} value={newEnv.category} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
                                         {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                     <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"12px", fontWeight:"700"}} onClick={handleCreate}>Create</button>
@@ -209,7 +228,7 @@
                                     <h3 style={{marginTop: 0, fontSize: "24px"}}>Settings</h3>
                                     <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
                                     <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
-                                    <select style={styles.select} value={editEnv.category} onChange={e => setEditEnv({...editEnv, category: e.target.value})}>
+                                    <select style={{width:"100%", padding:"16px", background:"#000", border:"1px solid #333", color:"#fff", borderRadius:"12px", marginBottom:"20px", fontSize:"16px"}} value={editEnv.category} onChange={e => setEditEnv({...editEnv, category: e.target.value})}>
                                         {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                     <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"12px", fontWeight:"700"}} onClick={async () => {
