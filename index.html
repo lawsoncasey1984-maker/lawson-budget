@@ -59,20 +59,26 @@
 
             useEffect(() => {
                 if (!window.db) return;
+                
                 const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snapshot) => {
-                    setEnvelopes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                    const envData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setEnvelopes(envData);
                 });
+
                 const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snapshot) => {
                     setBills(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
                 });
+
                 const unsubBal = window.fs.onSnapshot(window.fs.doc(window.db, "meta", "balances"), (doc) => {
                     if (doc.exists()) setBalances(doc.data());
                     setLoading(false);
                 });
+
                 return () => { unsubEnv(); unsubBills(); unsubBal(); };
             }, []);
 
-            const totalRemaining = envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0);
+            const totalRemaining = envelopes.reduce((acc, env) => acc + ((env.budget || 0) - (env.spent || 0)), 0);
+            
             const groupedEnvelopes = envelopes.reduce((acc, env) => {
                 const cat = env.category || "Other";
                 if (!acc[cat]) acc[cat] = [];
@@ -80,7 +86,6 @@
                 return acc;
             }, {});
 
-            // LOGIC: Determine current week of the month
             const getCurrentWeek = () => {
                 const day = new Date().getDate();
                 if (day <= 7) return "Week 1";
@@ -94,15 +99,35 @@
                 await window.fs.setDoc(window.fs.doc(window.db, "meta", "balances"), { ...balances, [key]: parseFloat(val) || 0 });
             }
 
-            async function handleAddBill() {
-                if(!newBill.name || !newBill.amount || !newBill.dueDay) return;
-                await window.fs.addDoc(window.fs.collection(window.db, "bills"), { 
-                    ...newBill, 
-                    amount: parseFloat(newBill.amount),
-                    dueDay: parseInt(newBill.dueDay)
+            async function handleUpdateEnv() {
+                const envRef = window.fs.doc(window.db, "envelopes", editEnv.id);
+                await window.fs.updateDoc(envRef, { 
+                    name: editEnv.name,
+                    baseBudget: parseFloat(editEnv.baseBudget) || 0,
+                    budget: parseFloat(editEnv.baseBudget) || 0, // Resetting the current limit to match base
+                    category: editEnv.category
                 });
-                setShowBillAdd(false);
-                setNewBill({ name: "", amount: "", week: "Week 1", dueDay: "" });
+                setShowSettings(false);
+            }
+
+            async function handleCreate() {
+                if(!newEnv.name || !newEnv.budget) return;
+                const b = parseFloat(newEnv.budget);
+                await window.fs.addDoc(window.fs.collection(window.db, "envelopes"), {
+                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, 
+                    category: newEnv.category, transactions: [], lastRefill: new Date().toLocaleDateString()
+                });
+                setShowAdd(false);
+            }
+
+            async function handleSpend() {
+                const amt = parseFloat(newTx.amount);
+                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
+                    spent: window.fs.increment(amt),
+                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc, amount: amt, date: new Date().toLocaleDateString() })
+                });
+                setShowSpend(false);
+                setNewTx({ desc: "", amount: "" });
             }
 
             const styles = {
@@ -111,8 +136,7 @@
                 balItem: { background: "rgba(255,255,255,0.05)", padding: "12px", borderRadius: "15px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" },
                 totalCard: { background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)", padding: "24px", borderRadius: "20px", marginBottom: "20px" },
                 card: { background: "rgba(255, 255, 255, 0.04)", padding: "20px", borderRadius: "20px", marginBottom: "12px", border: "1px solid rgba(255, 255, 255, 0.08)" },
-                activeWeekCard: { border: "2px solid #a855f7", boxShadow: "0 0 15px rgba(168, 85, 247, 0.3)", position: "relative" },
-                input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", boxSizing: "border-box" }
+                input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", boxSizing: "border-box", fontSize: "16px" }
             };
 
             if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing...</h3></div>;
@@ -123,7 +147,6 @@
                         <h1 style={{margin:0, fontSize: "22px", fontWeight: "800"}} onClick={() => setView("dashboard")}>Lawson</h1>
                         <div style={{display: 'flex', gap: '8px'}}>
                             <button onClick={() => setView("bills")} style={{background: view === "bills" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>📅</button>
-                            <button onClick={() => setView("stats")} style={{background: view === "stats" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>📊</button>
                             <button onClick={() => setView("settings")} style={{background: view === "settings" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>⚙️</button>
                         </div>
                     </header>
@@ -136,18 +159,23 @@
                                 <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", fontSize:"13px", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
                             </div>
                             <div style={styles.totalCard}>
-                                <div style={{fontSize: "12px", fontWeight: "600", opacity: 0.8}}>REMAINING ENVELOPE CASH</div>
+                                <div style={{fontSize: "12px", fontWeight: "600", opacity: 0.8}}>REMAINING CASH</div>
                                 <div style={{fontSize: "36px", fontWeight: "800", marginTop: "4px"}}>{formatMoney(totalRemaining)}</div>
                             </div>
-                            <button onClick={() => setShowAdd(true)} style={{width:"100%", padding:"14px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginBottom:"20px"}}>+ New Weekly Envelope</button>
+                            <button onClick={() => setShowAdd(true)} style={{width:"100%", padding:"14px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginBottom:"20px"}}>+ New Envelope</button>
+                            
                             {Object.entries(groupedEnvelopes).map(([category, items]) => (
                                 <div key={category}>
                                     <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", marginBottom:"10px", letterSpacing:"1px"}}>{category.toUpperCase()}</div>
                                     {items.map(env => (
                                         <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
-                                            <div style={{display:"flex", justifyContent:"space-between"}}>
+                                            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                                                 <span style={{fontWeight:"700"}}>{env.name}</span>
-                                                <span style={{fontSize:"12px", color:"#888"}}>{formatMoney(env.budget)} limit</span>
+                                                <button style={{background:"none", border:"none", padding: "5px", fontSize:"16px"}} onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditEnv({id: env.id, name: env.name, baseBudget: env.baseBudget, category: env.category});
+                                                    setShowSettings(true);
+                                                }}>⚙️</button>
                                             </div>
                                             <div style={{fontSize: "26px", fontWeight: "800", margin: "10px 0", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#fff"}}>{formatMoney(env.budget - env.spent)}</div>
                                             <button style={{background: "#fff", color: "#000", border: "none", borderRadius: "8px", padding: "6px 12px", fontWeight: "700", fontSize:"12px"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Spend</button>
@@ -158,73 +186,75 @@
                         </>
                     )}
 
+                    {/* All Modals are placed here for visibility */}
+                    {showSettings && (
+                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
+                                <h3 style={{marginTop:0}}>Envelope Settings</h3>
+                                <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
+                                <label style={{fontSize:"11px", color:"#888"}}>WEEKLY LIMIT ($)</label>
+                                <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
+                                <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleUpdateEnv}>Save Changes</button>
+                                <button onClick={() => setShowSettings(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Re-added Standard Views... */}
                     {view === "bills" && (
                         <div>
-                            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px"}}>
-                                <h2 style={{margin:0}}>Monthly Bills</h2>
-                                <button onClick={() => setShowBillAdd(true)} style={{background:"#6366f1", border:"none", color:"#fff", padding:"8px 15px", borderRadius:"10px", fontWeight:"600"}}>+ Add Bill</button>
-                            </div>
+                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", marginBottom:"20px", fontWeight:"600"}}>← Back</button>
+                            <h2>Monthly Bills</h2>
                             {WEEKS.map(week => (
-                                <div key={week} style={{
-                                    marginBottom:"25px", 
-                                    padding: week === currentWeekTag ? "15px" : "0",
-                                    borderRadius: "20px",
-                                    background: week === currentWeekTag ? "rgba(168, 85, 247, 0.05)" : "transparent",
-                                    border: week === currentWeekTag ? "1px solid rgba(168, 85, 247, 0.3)" : "none"
-                                }}>
-                                    <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px"}}>
-                                        <div style={{color: week === currentWeekTag ? "#a855f7" : "#555", fontWeight:"800", fontSize:"13px", letterSpacing: "1px"}}>{week.toUpperCase()}</div>
-                                        {week === currentWeekTag && <span style={{fontSize: "9px", background: "#a855f7", color: "#fff", padding: "3px 8px", borderRadius: "20px", fontWeight: "900"}}>THIS WEEK</span>}
-                                    </div>
+                                <div key={week} style={{marginBottom:"25px", borderLeft: week === currentWeekTag ? "3px solid #a855f7" : "none", paddingLeft: "10px"}}>
+                                    <div style={{color: week === currentWeekTag ? "#a855f7" : "#555", fontWeight:"800", fontSize:"13px"}}>{week.toUpperCase()}</div>
                                     {bills.filter(b => b.week === week).sort((a,b) => a.dueDay - b.dueDay).map(bill => (
-                                        <div key={bill.id} style={{...styles.card, background: week === currentWeekTag ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)", display:"flex", justifyContent:"space-between", alignItems:"center", padding:"15px", marginBottom:"8px"}}>
-                                            <div style={{display:"flex", alignItems:"center", gap:"12px"}}>
-                                                <div style={{background: week === currentWeekTag ? "#a855f7" : "#222", width:"35px", height:"35px", borderRadius:"10px", display:"flex", alignItems:"center", justifyContent:"center", fontSize:"14px", fontWeight:"800", color: week === currentWeekTag ? "#fff" : "#6366f1"}}>
-                                                    {bill.dueDay}
-                                                </div>
-                                                <div>
-                                                    <div style={{fontWeight:"600", fontSize:"15px"}}>{bill.name}</div>
-                                                    <div style={{fontSize:"12px", color:"#888"}}>{formatMoney(bill.amount)}</div>
-                                                </div>
-                                            </div>
-                                            <button onClick={() => deleteBill(bill.id)} style={{background:"none", border:"none", color:"#444", fontSize:"18px"}}>✕</button>
+                                        <div key={bill.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems:"center", padding:"15px", marginBottom:"8px"}}>
+                                            <div style={{fontWeight:"600"}}>{bill.dueDay} - {bill.name}</div>
+                                            <div style={{fontWeight:"700"}}>{formatMoney(bill.amount)}</div>
                                         </div>
                                     ))}
-                                    {bills.filter(b => b.week === week).length === 0 && <div style={{fontSize:"12px", color:"#333", marginLeft:"5px"}}>No bills scheduled</div>}
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    {/* Settings, Stats, and Modals remain identical for stability */}
-                    {view === "settings" && (
+                    {view === "details" && activeEnv && (
                         <div>
-                            <h2 style={{marginBottom:"20px"}}>Manage Balances</h2>
-                            <div style={styles.card}>
-                                <label style={{fontSize:"11px", color:"#888", fontWeight:"700"}}>BANK ACCOUNT</label>
-                                <input style={{...styles.input, marginTop:"5px"}} type="number" placeholder="0.00" value={balances.bank} onChange={e => updateBalance("bank", e.target.value)} />
-                                <label style={{fontSize:"11px", color:"#888", fontWeight:"700"}}>CREDIT CARD TOTAL</label>
-                                <input style={{...styles.input, marginTop:"5px"}} type="number" placeholder="0.00" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} />
-                                <label style={{fontSize:"11px", color:"#888", fontWeight:"700"}}>SAVINGS ACCOUNT</label>
-                                <input style={{...styles.input, marginTop:"5px"}} type="number" placeholder="0.00" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} />
-                            </div>
-                            <button onClick={() => setView("dashboard")} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginTop:"10px"}}>Done</button>
+                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", marginBottom:"20px", fontWeight:"600"}}>← Dashboard</button>
+                            <h2>{activeEnv.name}</h2>
+                            {activeEnv.transactions?.slice().reverse().map(t => (
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between"}}>
+                                    <div>{t.desc}</div>
+                                    <div style={{color:"#ff6b6b"}}>-{formatMoney(t.amount)}</div>
+                                </div>
+                            ))}
                         </div>
                     )}
-                    {showBillAdd && (
+
+                    {showAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
-                                <h3 style={{marginTop:0, marginBottom:"20px"}}>Add New Monthly Bill</h3>
-                                <input style={styles.input} placeholder="Bill Name" value={newBill.name} onChange={e => setNewBill({...newBill, name: e.target.value})} />
-                                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:"10px"}}>
-                                    <input style={styles.input} type="number" placeholder="Amount ($)" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} />
-                                    <input style={styles.input} type="number" placeholder="Due Day (1-31)" value={newBill.dueDay} onChange={e => setNewBill({...newBill, dueDay: e.target.value})} />
-                                </div>
-                                <select style={styles.input} value={newBill.week} onChange={e => setNewBill({...newBill, week: e.target.value})}>
-                                    {WEEKS.map(w => <option key={w} value={w}>{w}</option>)}
+                                <h3>New Envelope</h3>
+                                <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
+                                <select style={styles.input} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
+                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
-                                <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800", marginTop:"10px"}} onClick={handleAddBill}>Save Bill</button>
-                                <button onClick={() => setShowBillAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px", fontWeight:"600"}}>Cancel</button>
+                                <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleCreate}>Create</button>
+                                <button onClick={() => setShowAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {showSpend && (
+                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
+                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
+                                <h3>Spend from {activeEnv?.name}</h3>
+                                <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleSpend}>Confirm Purchase</button>
+                                <button onClick={() => setShowSpend(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
                         </div>
                     )}
