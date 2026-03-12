@@ -4,16 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Lawson Budget</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, writeBatch, setDoc, getDoc } 
+        import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, setDoc }
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
         const firebaseConfig = {
             apiKey: "AIzaSyDj8wkC8yyTsqwsvpCE_9tg2qzg2wP4zJQ",
             authDomain: "budget-tracker-edb31.firebaseapp.com",
@@ -23,312 +22,753 @@
             appId: "1:159580306838:web:25ac3bacae328373dcb1b7",
             measurementId: "G-NPLMZ6JQ96"
         };
-
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         window.db = db;
-        window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, writeBatch, setDoc, getDoc };
+        window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, setDoc };
     </script>
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0e0e0e;
+            --surface: #161616;
+            --surface2: #1e1e1e;
+            --border: #2a2a2a;
+            --border2: #333;
+            --text: #f0ede8;
+            --text2: #888;
+            --text3: #555;
+            --accent: #e8d5a3;
+            --accent2: #c4a96b;
+            --red: #e05c5c;
+            --green: #5eba8a;
+            --blue: #6a9fd8;
+            --mono: 'Geist Mono', monospace;
+            --sans: 'Plus Jakarta Sans', sans-serif;
+        }
+
+        html, body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+        #root { max-width: 430px; margin: 0 auto; min-height: 100vh; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 2px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+        /* Animations */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .fade-up { animation: fadeUp 0.35s cubic-bezier(0.22,1,0.36,1) both; }
+        .slide-up { animation: slideUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+        .fade-in { animation: fadeIn 0.2s ease both; }
+
+        /* Nav */
+        .nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 20px 20px 0;
+            position: sticky; top: 0; z-index: 10;
+            background: linear-gradient(to bottom, var(--bg) 80%, transparent);
+        }
+        .nav-logo {
+            font-family: var(--sans); font-size: 15px; font-weight: 800;
+            letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
+        }
+        .nav-actions { display: flex; gap: 6px; }
+        .nav-btn {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: var(--surface); border: 1px solid var(--border);
+            color: var(--text2); font-size: 14px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .nav-btn:hover, .nav-btn.active { background: var(--surface2); border-color: var(--border2); color: var(--text); }
+        .nav-btn.active { border-color: var(--accent2); color: var(--accent); }
+
+        /* Page */
+        .page { padding: 20px; padding-bottom: 100px; }
+
+        /* Hero balance */
+        .hero {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px 24px 24px;
+            margin-bottom: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute; top: 0; right: 0;
+            width: 180px; height: 180px;
+            background: radial-gradient(circle, rgba(232,213,163,0.06) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .hero-label {
+            font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text3); margin-bottom: 8px;
+        }
+        .hero-amount {
+            font-family: var(--mono); font-size: 46px; font-weight: 400;
+            color: var(--accent); letter-spacing: -0.02em; line-height: 1;
+        }
+        .hero-amount.negative { color: var(--red); }
+
+        /* Balance row */
+        .bal-row {
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px; margin-bottom: 20px;
+        }
+        .bal-chip {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 14px; padding: 12px 10px; text-align: center;
+        }
+        .bal-chip-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--text3); margin-bottom: 4px; }
+        .bal-chip-val { font-family: var(--mono); font-size: 14px; font-weight: 500; }
+
+        /* Section header */
+        .section-head {
+            display: flex; align-items: center; gap: 8px;
+            margin: 24px 0 10px;
+        }
+        .section-head-line { flex: 1; height: 1px; background: var(--border); }
+        .section-head-label {
+            font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text3);
+        }
+
+        /* Envelope card */
+        .env-card {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 16px; padding: 16px;
+            margin-bottom: 8px; cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            position: relative; overflow: hidden;
+        }
+        .env-card:hover { border-color: var(--border2); background: var(--surface2); }
+        .env-card:active { transform: scale(0.99); }
+
+        .env-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .env-name { font-size: 15px; font-weight: 700; color: var(--text); }
+        .env-gear {
+            width: 28px; height: 28px; border-radius: 8px; display: flex;
+            align-items: center; justify-content: center;
+            background: none; border: none; color: var(--text3);
+            font-size: 13px; cursor: pointer; transition: color 0.15s;
+        }
+        .env-gear:hover { color: var(--text); background: var(--border); }
+
+        .env-remaining { font-family: var(--mono); font-size: 26px; font-weight: 400; margin-bottom: 10px; }
+        .env-remaining.neg { color: var(--red); }
+        .env-remaining.ok { color: var(--text); }
+
+        /* Progress bar */
+        .env-bar-track {
+            height: 3px; background: var(--border); border-radius: 99px; margin-bottom: 10px; overflow: hidden;
+        }
+        .env-bar-fill { height: 100%; border-radius: 99px; transition: width 0.4s cubic-bezier(0.22,1,0.36,1); }
+
+        .env-bottom { display: flex; justify-content: space-between; align-items: center; }
+        .env-meta { font-family: var(--mono); font-size: 12px; color: var(--text3); }
+
+        /* Spend / Refill buttons */
+        .spend-btn {
+            font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em;
+            padding: 7px 16px; border-radius: 8px;
+            background: var(--surface2); border: 1px solid var(--border2);
+            color: var(--text2); cursor: pointer; transition: all 0.15s;
+        }
+        .spend-btn:hover { background: var(--accent); border-color: var(--accent); color: #000; }
+
+        .refill-btn {
+            font-family: var(--mono); font-size: 12px; letter-spacing: 0.05em;
+            padding: 7px 14px; border-radius: 8px;
+            background: var(--surface2); border: 1px solid var(--border2);
+            color: var(--green); cursor: pointer; transition: all 0.15s;
+        }
+        .refill-btn:hover { background: var(--green); border-color: var(--green); color: #000; }
+
+        @keyframes refillPop {
+            0% { transform: scale(1); }
+            40% { transform: scale(1.04); }
+            100% { transform: scale(1); }
+        }
+        .refill-flash { animation: refillPop 0.35s cubic-bezier(0.22,1,0.36,1); }
+
+        /* CTA button */
+        .cta {
+            width: 100%; padding: 15px; border-radius: 14px;
+            font-family: var(--sans); font-size: 14px; font-weight: 700;
+            letter-spacing: 0.04em; cursor: pointer; transition: all 0.15s;
+            border: 1px solid var(--border2);
+        }
+        .cta-primary {
+            background: var(--accent); color: #0e0e0e; border-color: var(--accent);
+        }
+        .cta-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+        .cta-ghost { background: transparent; color: var(--text2); }
+        .cta-ghost:hover { color: var(--text); }
+        .cta-danger { background: transparent; color: var(--red); border-color: transparent; }
+        .cta-indigo { background: #3d5a99; color: #fff; border-color: #3d5a99; }
+
+        /* Sheet overlay */
+        .sheet-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px); z-index: 1000;
+            display: flex; align-items: flex-end;
+            animation: fadeIn 0.2s ease;
+        }
+        .sheet {
+            background: var(--surface); width: 100%; max-width: 430px; margin: 0 auto;
+            border-radius: 24px 24px 0 0; padding: 32px 24px 40px;
+            border-top: 1px solid var(--border2);
+            animation: slideUp 0.35s cubic-bezier(0.22,1,0.36,1);
+        }
+        .sheet-handle {
+            width: 36px; height: 4px; background: var(--border2); border-radius: 99px;
+            margin: -16px auto 24px;
+        }
+        .sheet-title {
+            font-size: 20px; font-weight: 700; margin-bottom: 20px; color: var(--text);
+        }
+
+        /* Input */
+        .field { margin-bottom: 12px; }
+        .field-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--text3); margin-bottom: 6px; }
+        .inp {
+            width: 100%; padding: 14px 16px;
+            background: var(--bg); border: 1px solid var(--border2);
+            color: var(--text); border-radius: 12px;
+            font-family: var(--mono); font-size: 16px;
+            outline: none; transition: border-color 0.15s;
+            appearance: none; -webkit-appearance: none;
+        }
+        .inp:focus { border-color: var(--accent2); }
+        .inp::placeholder { color: var(--text3); }
+        select.inp { cursor: pointer; }
+
+        /* Bills view */
+        .week-block { margin-bottom: 28px; }
+        .week-label {
+            font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--text3); margin-bottom: 10px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .week-label .dot {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--text3);
+        }
+        .week-label.current .dot { background: var(--accent); animation: pulse 2s infinite; }
+        .week-label.current { color: var(--accent); }
+
+        .bill-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 16px; border-radius: 12px;
+            background: var(--surface); border: 1px solid var(--border);
+            margin-bottom: 6px; transition: border-color 0.15s;
+        }
+        .bill-row:hover { border-color: var(--border2); }
+        .bill-day { font-family: var(--mono); font-size: 12px; color: var(--text3); margin-right: 12px; min-width: 20px; }
+        .bill-name { font-size: 15px; font-weight: 600; flex: 1; }
+        .bill-amount { font-family: var(--mono); font-size: 15px; color: var(--accent); margin-right: 10px; }
+        .del-btn {
+            background: none; border: none; color: var(--text3); font-size: 16px;
+            cursor: pointer; padding: 4px; line-height: 1; transition: color 0.15s;
+            width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+            border-radius: 6px;
+        }
+        .del-btn:hover { color: var(--red); background: rgba(224,92,92,0.1); }
+
+        /* Transaction list */
+        .tx-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 0; border-bottom: 1px solid var(--border);
+        }
+        .tx-row:last-child { border-bottom: none; }
+        .tx-desc { font-size: 15px; font-weight: 600; }
+        .tx-date { font-family: var(--mono); font-size: 11px; color: var(--text3); margin-top: 2px; }
+        .tx-amount { font-family: var(--mono); font-size: 15px; color: var(--red); font-weight: 500; }
+
+        /* Details header */
+        .back-btn {
+            background: none; border: none; color: var(--accent2);
+            font-family: var(--mono); font-size: 12px; cursor: pointer;
+            margin-bottom: 20px; display: flex; align-items: center; gap: 6px;
+            padding: 0;
+        }
+
+        /* Confirm dialog */
+        .confirm-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(6px); z-index: 2000;
+            display: flex; align-items: center; justify-content: center; padding: 24px;
+            animation: fadeIn 0.15s ease;
+        }
+        .confirm-box {
+            background: var(--surface); border: 1px solid var(--border2);
+            border-radius: 20px; padding: 28px 24px; width: 100%; max-width: 320px;
+        }
+        .confirm-msg { font-size: 15px; font-weight: 600; text-align: center; margin-bottom: 20px; color: var(--text); }
+        .confirm-row { display: flex; gap: 10px; }
+
+        /* Error toast */
+        .toast {
+            position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+            background: var(--red); color: #fff; padding: 10px 20px;
+            border-radius: 10px; font-family: var(--mono); font-size: 12px;
+            z-index: 3000; white-space: nowrap;
+            animation: fadeUp 0.2s ease;
+        }
+
+        /* Week pill for bills page top */
+        .page-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 24px;
+        }
+        .page-title { font-size: 24px; font-weight: 800; }
+        .add-pill {
+            font-family: var(--mono); font-size: 12px; padding: 9px 16px;
+            background: var(--surface); border: 1px solid var(--border2);
+            color: var(--text); border-radius: 10px; cursor: pointer; transition: all 0.15s;
+        }
+        .add-pill:hover { background: var(--surface2); border-color: var(--accent2); color: var(--accent); }
+
+        /* Hint text */
+        .hint { font-family: var(--mono); font-size: 12px; color: var(--accent2); margin: -4px 0 12px; letter-spacing: 0.04em; }
+
+        /* Empty state */
+        .empty { text-align: center; padding: 48px 0; color: var(--text3); font-family: var(--mono); font-size: 13px; }
+    </style>
 </head>
-<body style="margin:0; background: #0b0b0f; font-family: 'Inter', sans-serif; color: #ffffff; -webkit-font-smoothing: antialiased;">
-    <div id="root"></div>
+<body>
+<div id="root"></div>
 
-    <script type="text/babel">
-        const { useState, useEffect, useMemo } = React;
-        const formatMoney = (n) => "$" + Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        const CATEGORIES = ["Daily", "Bills", "Fun", "Household", "Savings", "Other"];
-        const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4"];
+<script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
 
-        function App() {
-            const [envelopes, setEnvelopes] = useState([]);
-            const [bills, setBills] = useState([]);
-            const [balances, setBalances] = useState({ bank: 0, credit: 0, savings: 0 });
-            const [loading, setLoading] = useState(true);
-            const [view, setView] = useState("dashboard"); 
-            const [activeId, setActiveId] = useState(null);
-            
-            const [showAdd, setShowAdd] = useState(false);
-            const [showSpend, setShowSpend] = useState(false);
-            const [showSettings, setShowSettings] = useState(false);
-            const [showBillAdd, setShowBillAdd] = useState(false);
-            
-            const [newEnv, setNewEnv] = useState({ name: "", budget: "", category: "Daily" });
-            const [newTx, setNewTx] = useState({ desc: "", amount: "" });
-            const [newBill, setNewBill] = useState({ name: "", amount: "", dueDay: "" });
-            const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: 0, category: "Daily" });
+    const fmt = (n) => {
+        const abs = Math.abs(Number(n));
+        const str = abs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return (Number(n) < 0 ? "-$" : "$") + str;
+    };
+    const round2 = (n) => Math.round(parseFloat(n) * 100) / 100;
 
-            useEffect(() => {
-                if (!window.db) return;
-                const unsubEnv = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snap) => {
-                    setEnvelopes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                });
-                const unsubBills = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snap) => {
-                    setBills(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-                });
-                const unsubBal = window.fs.onSnapshot(window.fs.doc(window.db, "meta", "balances"), (doc) => {
-                    if (doc.exists()) setBalances(doc.data());
-                    setLoading(false);
-                });
-                return () => { unsubEnv(); unsubBills(); unsubBal(); };
-            }, []);
+    const CATEGORIES = ["Daily", "Bills", "Fun", "Household", "Savings", "Other"];
+    const WEEKS = ["Week 1", "Week 2", "Week 3", "Week 4"];
 
-            const groupedEnvelopes = useMemo(() => {
-                return envelopes.reduce((acc, env) => {
-                    const cat = env.category || "Other";
-                    if (!acc[cat]) acc[cat] = [];
-                    acc[cat].push(env);
-                    return acc;
-                }, {});
-            }, [envelopes]);
+    const getWeekFromDay = (day) => {
+        const d = parseInt(day);
+        if (d <= 7) return "Week 1";
+        if (d <= 14) return "Week 2";
+        if (d <= 21) return "Week 3";
+        return "Week 4";
+    };
+    const getCurrentWeekTag = () => getWeekFromDay(new Date().getDate());
 
-            const activeEnv = envelopes.find(e => e.id === activeId);
+    function ConfirmDialog({ message, onConfirm, onCancel }) {
+        return (
+            <div className="confirm-overlay">
+                <div className="confirm-box">
+                    <div className="confirm-msg">{message}</div>
+                    <div className="confirm-row">
+                        <button className="cta cta-ghost" style={{flex:1}} onClick={onCancel}>Cancel</button>
+                        <button className="cta" style={{flex:1, background:"var(--red)", color:"#fff", border:"1px solid var(--red)"}} onClick={onConfirm}>Delete</button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
-            const getWeekFromDay = (day) => {
-                const d = parseInt(day);
-                if (d <= 7) return "Week 1";
-                if (d <= 14) return "Week 2";
-                if (d <= 21) return "Week 3";
-                return "Week 4";
+    function App() {
+        const [envelopes, setEnvelopes] = useState([]);
+        const [bills, setBills] = useState([]);
+        const [balances, setBalances] = useState({ bank: 0, credit: 0, savings: 0 });
+        const [loading, setLoading] = useState(true);
+        const [view, setView] = useState("dashboard");
+        const [activeId, setActiveId] = useState(null);
+        const [error, setError] = useState(null);
+
+        const [showAdd, setShowAdd] = useState(false);
+        const [showSpend, setShowSpend] = useState(false);
+        const [showBillAdd, setShowBillAdd] = useState(false);
+        const [settingsMode, setSettingsMode] = useState(null);
+
+        const [confirmState, setConfirmState] = useState(null);
+
+        const [newEnv, setNewEnv] = useState({ name: "", budget: "", category: "Daily" });
+        const [newTx, setNewTx] = useState({ desc: "", amount: "" });
+        const [newBill, setNewBill] = useState({ name: "", amount: "", dueDay: "" });
+        const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: "", category: "Daily" });
+
+        const showConfirm = (message, onConfirm) => setConfirmState({ message, onConfirm });
+        const showError = (msg) => { setError(msg); setTimeout(() => setError(null), 3500); };
+
+        const withError = async (fn) => {
+            try { await fn(); }
+            catch (e) { showError(e.message || "Something went wrong"); }
+        };
+
+        useEffect(() => {
+            if (!window.db) return;
+            const u1 = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snap) =>
+                setEnvelopes(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+            const u2 = window.fs.onSnapshot(window.fs.collection(window.db, "bills"), (snap) =>
+                setBills(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+            const u3 = window.fs.onSnapshot(window.fs.doc(window.db, "meta", "balances"), (d) => {
+                if (d.exists()) setBalances(d.data());
+                setLoading(false);
+            });
+            return () => { u1(); u2(); u3(); };
+        }, []);
+
+        const grouped = useMemo(() => envelopes.reduce((acc, env) => {
+            const cat = env.category || "Other";
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(env);
+            return acc;
+        }, {}), [envelopes]);
+
+        const activeEnv = envelopes.find(e => e.id === activeId);
+        const totalRemaining = envelopes.reduce((a, e) => a + (e.budget - e.spent), 0);
+
+        async function updateBalance(key, val) {
+            const nb = { ...balances, [key]: parseFloat(val) || 0 };
+            setBalances(nb);
+            await withError(() => window.fs.setDoc(window.fs.doc(window.db, "meta", "balances"), nb));
+        }
+
+        function openEnvSettings(env) {
+            setEditEnv({ id: env.id, name: env.name, baseBudget: env.baseBudget !== undefined ? env.baseBudget : (env.budget || 0), category: env.category || "Daily" });
+            setSettingsMode("envelope");
+        }
+
+        async function handleUpdateEnv() {
+            const base = round2(editEnv.baseBudget);
+            await withError(() => window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { name: editEnv.name, baseBudget: base, budget: base, category: editEnv.category }));
+            setSettingsMode(null);
+        }
+
+        async function handleAddBill() {
+            if (!newBill.name || !newBill.amount || !newBill.dueDay) return;
+            const dueDay = parseInt(newBill.dueDay);
+            await withError(() => window.fs.addDoc(window.fs.collection(window.db, "bills"), { name: newBill.name, amount: round2(newBill.amount), dueDay, week: getWeekFromDay(dueDay) }));
+            setShowBillAdd(false);
+            setNewBill({ name: "", amount: "", dueDay: "" });
+        }
+
+        async function handleCreate() {
+            if (!newEnv.name || !newEnv.budget) return;
+            const b = round2(newEnv.budget);
+            await withError(() => window.fs.addDoc(window.fs.collection(window.db, "envelopes"), { name: newEnv.name, baseBudget: b, budget: b, spent: 0, category: newEnv.category, transactions: [] }));
+            setShowAdd(false);
+            setNewEnv({ name: "", budget: "", category: "Daily" });
+        }
+
+        async function handleSpend() {
+            if (!activeId || !newTx.amount) return;
+            const amount = round2(newTx.amount);
+            if (amount <= 0) { showError("Amount must be greater than $0"); return; }
+            await withError(() => window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
+                spent: window.fs.increment(amount),
+                transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc || "Expense", amount, date: new Date().toLocaleDateString() })
+            }));
+            setShowSpend(false);
+            setNewTx({ desc: "", amount: "" });
+        }
+
+        async function handleDeleteTx(t) {
+            await withError(() => window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeEnv.id), {
+                spent: window.fs.increment(-round2(t.amount)),
+                transactions: activeEnv.transactions.filter(i => i.id !== t.id)
+            }));
+        }
+
+        async function handleDeleteEnv(id) {
+            await withError(() => window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", id)));
+            setSettingsMode(null);
+        }
+
+        async function handleDeleteBill(id) {
+            await withError(() => window.fs.deleteDoc(window.fs.doc(window.db, "bills", id)));
+        }
+
+        async function handleRefill(env, e) {
+            e.stopPropagation();
+            const leftover = round2(Math.max(0, env.budget - env.spent));
+            const base = env.baseBudget !== undefined ? env.baseBudget : env.budget;
+            const newBudget = round2(base + leftover);
+            const refillTx = {
+                id: Date.now(),
+                desc: leftover > 0 ? `↺ Refill (+${fmt(leftover)} rollover)` : "↺ Refill",
+                amount: 0,
+                type: "refill",
+                newBudget,
+                date: new Date().toLocaleDateString()
             };
+            await withError(() =>
+                window.fs.updateDoc(window.fs.doc(window.db, "envelopes", env.id), {
+                    spent: 0,
+                    budget: newBudget,
+                    transactions: window.fs.arrayUnion(refillTx)
+                })
+            );
+        }
 
-            const getCurrentWeekTag = () => getWeekFromDay(new Date().getDate());
+        if (loading) return (
+            <div style={{height:"100vh", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"12px"}}>
+                <div style={{fontFamily:"var(--mono)", fontSize:"11px", color:"var(--text3)", letterSpacing:"0.1em"}}>SYNCING LAWSON...</div>
+            </div>
+        );
 
-            async function handleRollover(env) {
-                const surplus = (env.budget || 0) - (env.spent || 0);
-                const newWeekBudget = (env.baseBudget || 0) + surplus;
-                
-                const msg = surplus >= 0 
-                    ? `Rollover ${formatMoney(surplus)}? New budget will be ${formatMoney(newWeekBudget)}.`
-                    : `You are over budget by ${formatMoney(Math.abs(surplus))}. Reset to base budget ${formatMoney(env.baseBudget)}?`;
+        return (
+            <>
+                {error && <div className="toast">{error}</div>}
+                {confirmState && <ConfirmDialog message={confirmState.message} onConfirm={() => { confirmState.onConfirm(); setConfirmState(null); }} onCancel={() => setConfirmState(null)} />}
 
-                if(confirm(msg)) {
-                    await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", env.id), {
-                        spent: 0,
-                        budget: newWeekBudget,
-                        transactions: []
-                    });
-                }
-            }
+                <div className="nav">
+                    <div className="nav-logo" onClick={() => setView("dashboard")} style={{cursor:"pointer"}}>Lawson Budget</div>
+                    <div className="nav-actions">
+                        <button className={`nav-btn ${view === "bills" ? "active" : ""}`} onClick={() => setView("bills")}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        </button>
+                        <button className={`nav-btn ${settingsMode === "balances" ? "active" : ""}`} onClick={() => setSettingsMode("balances")}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+                        </button>
+                    </div>
+                </div>
 
-            async function updateBalance(key, val) {
-                const newBals = { ...balances, [key]: parseFloat(val) || 0 };
-                setBalances(newBals);
-                await window.fs.setDoc(window.fs.doc(window.db, "meta", "balances"), newBals);
-            }
-
-            async function handleUpdateEnv() {
-                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { 
-                    name: editEnv.name, 
-                    baseBudget: parseFloat(editEnv.baseBudget) || 0,
-                    budget: parseFloat(editEnv.baseBudget) || 0, // Resetting current budget to base on update
-                    category: editEnv.category
-                });
-                setShowSettings(false);
-            }
-
-            async function handleAddBill() {
-                if(!newBill.name || !newBill.amount || !newBill.dueDay) return;
-                await window.fs.addDoc(window.fs.collection(window.db, "bills"), { 
-                    name: newBill.name, amount: parseFloat(newBill.amount), 
-                    dueDay: parseInt(newBill.dueDay), week: getWeekFromDay(newBill.dueDay)
-                });
-                setShowBillAdd(false);
-                setNewBill({ name: "", amount: "", dueDay: "" });
-            }
-
-            async function handleCreate() {
-                if(!newEnv.name || !newEnv.budget) return;
-                const b = parseFloat(newEnv.budget);
-                await window.fs.addDoc(window.fs.collection(window.db, "envelopes"), {
-                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, category: newEnv.category, transactions: []
-                });
-                setShowAdd(false);
-                setNewEnv({ name: "", budget: "", category: "Daily" });
-            }
-
-            async function handleSpend() {
-                if (!activeId || !newTx.amount) return;
-                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
-                    spent: window.fs.increment(parseFloat(newTx.amount)),
-                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc || "Expense", amount: parseFloat(newTx.amount), date: new Date().toLocaleDateString() })
-                });
-                setShowSpend(false);
-                setNewTx({ desc: "", amount: "" });
-            }
-
-            const styles = {
-                app: { padding: "20px", maxWidth: "480px", margin: "0 auto", paddingBottom: "100px" },
-                balGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginBottom: "20px" },
-                balItem: { background: "rgba(255,255,255,0.05)", padding: "12px", borderRadius: "15px", textAlign: "center", border: "1px solid rgba(255,255,255,0.08)" },
-                totalCard: { background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)", padding: "24px", borderRadius: "20px", marginBottom: "20px" },
-                card: { background: "rgba(255, 255, 255, 0.04)", padding: "20px", borderRadius: "20px", marginBottom: "12px", border: "1px solid rgba(255, 255, 255, 0.08)" },
-                input: { width: "100%", padding: "14px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "10px", fontSize: "16px", boxSizing: "border-box" }
-            };
-
-            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing Lawson...</h3></div>;
-
-            return (
-                <div style={styles.app}>
-                    <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px'}}>
-                        <h1 style={{margin:0, fontSize: "22px", fontWeight: "800"}} onClick={() => setView("dashboard")}>Lawson</h1>
-                        <div style={{display: 'flex', gap: '8px'}}>
-                            <button onClick={() => setView("bills")} style={{background: view === "bills" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>📅</button>
-                            <button onClick={() => { setView("settings"); setShowSettings(true); }} style={{background: view === "settings" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>⚙️</button>
-                        </div>
-                    </header>
-
+                <div className="page">
                     {view === "dashboard" && (
-                        <>
-                            <div style={styles.balGrid}>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>BANK</div><div style={{fontWeight:"700", fontSize:"13px"}}>{formatMoney(balances.bank)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>CREDIT</div><div style={{fontWeight:"700", fontSize:"13px", color:"#ff6b6b"}}>{formatMoney(balances.credit)}</div></div>
-                                <div style={styles.balItem}><div style={{fontSize:"10px", color:"#888"}}>SAVINGS</div><div style={{fontWeight:"700", fontSize:"13px", color:"#4ECDC4"}}>{formatMoney(balances.savings)}</div></div>
+                        <div className="fade-up">
+                            {/* Hero */}
+                            <div className="hero" style={{marginBottom:"8px"}}>
+                                <div className="hero-label">available cash</div>
+                                <div className={`hero-amount ${totalRemaining < 0 ? "negative" : ""}`}>{fmt(totalRemaining)}</div>
                             </div>
-                            <div style={styles.totalCard}>
-                                <div style={{fontSize: "12px", fontWeight: "600", opacity: 0.8}}>REMAINING CASH</div>
-                                <div style={{fontSize: "36px", fontWeight: "800"}}>{formatMoney(envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0))}</div>
+
+                            {/* Balances */}
+                            <div className="bal-row">
+                                <div className="bal-chip">
+                                    <div className="bal-chip-label">bank</div>
+                                    <div className="bal-chip-val" style={{color:"var(--green)"}}>{fmt(balances.bank)}</div>
+                                </div>
+                                <div className="bal-chip">
+                                    <div className="bal-chip-label">credit</div>
+                                    <div className="bal-chip-val" style={{color:"var(--red)"}}>{fmt(balances.credit)}</div>
+                                </div>
+                                <div className="bal-chip">
+                                    <div className="bal-chip-label">savings</div>
+                                    <div className="bal-chip-val" style={{color:"var(--blue)"}}>{fmt(balances.savings)}</div>
+                                </div>
                             </div>
-                            <button onClick={() => setShowAdd(true)} style={{width:"100%", padding:"14px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700", marginBottom:"20px"}}>+ New Envelope</button>
-                            
-                            {Object.entries(groupedEnvelopes).map(([category, items]) => (
-                                <div key={category}>
-                                    <div style={{fontSize:"11px", fontWeight:"800", color:"#6366f1", margin:"15px 0 10px", letterSpacing:"1px"}}>{category.toUpperCase()}</div>
-                                    {items.map(env => (
-                                        <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
-                                            <div style={{display:"flex", justifyContent:"space-between", fontWeight:"700"}}>
-                                                <span>{env.name}</span>
-                                                <button style={{background:"none", border:"none", fontSize:"16px"}} onClick={(e) => { e.stopPropagation(); setEditEnv(env); setShowSettings(true); }}>⚙️</button>
+
+                            <button className="cta cta-primary" style={{marginBottom:"4px"}} onClick={() => setShowAdd(true)}>+ New Envelope</button>
+
+                            {Object.entries(grouped).map(([cat, items], gi) => (
+                                <div key={cat}>
+                                    <div className="section-head">
+                                        <div className="section-head-line"/>
+                                        <div className="section-head-label">{cat}</div>
+                                        <div className="section-head-line"/>
+                                    </div>
+                                    {items.map((env, i) => {
+                                        const pct = env.budget > 0 ? Math.min((env.spent / env.budget) * 100, 100) : 0;
+                                        const rem = env.budget - env.spent;
+                                        const barColor = pct >= 100 ? "var(--red)" : pct >= 80 ? "#d4924a" : "var(--green)";
+                                        return (
+                                            <div key={env.id} className="env-card" style={{animationDelay:`${(gi*3+i)*0.04}s`}} onClick={() => { setActiveId(env.id); setView("details"); }}>
+                                                <div className="env-card-top">
+                                                    <div className="env-name">{env.name}</div>
+                                                    <button className="env-gear" onClick={(e) => { e.stopPropagation(); openEnvSettings(env); }}>
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+                                                    </button>
+                                                </div>
+                                                <div className={`env-remaining ${rem < 0 ? "neg" : "ok"}`}>{fmt(rem)}</div>
+                                                <div className="env-bar-track">
+                                                    <div className="env-bar-fill" style={{width:`${pct}%`, background: barColor}}/>
+                                                </div>
+                                                <div className="env-bottom">
+                                                    <div className="env-meta">{fmt(env.spent)} / {fmt(env.budget)}</div>
+                                                    <div style={{display:"flex", gap:"6px"}}>
+                                                        <button className="refill-btn" onClick={(e) => handleRefill(env, e)}>↺</button>
+                                                        <button className="spend-btn" onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>spend →</button>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div style={{fontSize: "26px", fontWeight: "800", margin: "10px 0", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#fff"}}>{formatMoney(env.budget - env.spent)}</div>
-                                            <div style={{display: 'flex', gap: '8px'}}>
-                                                <button style={{flex: 1, background: "#fff", color: "#000", border: "none", borderRadius: "8px", padding: "8px", fontWeight: "700", fontSize:"12px"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Spend</button>
-                                                <button style={{background: "rgba(168, 85, 247, 0.15)", color: "#a855f7", border: "none", borderRadius: "8px", padding: "8px 12px", fontWeight: "700", fontSize:"12px"}} onClick={(e) => { e.stopPropagation(); handleRollover(env); }}>Rollover</button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ))}
-                        </>
+                        </div>
                     )}
 
                     {view === "bills" && (
-                        <div>
-                            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px"}}>
-                                <h2 style={{margin:0}}>Monthly Bills</h2>
-                                <button onClick={() => setShowBillAdd(true)} style={{background:"#6366f1", color:"#fff", padding:"8px 15px", borderRadius:"10px", border:"none", fontWeight:"600"}}>+ Add Bill</button>
+                        <div className="fade-up">
+                            <div className="page-header">
+                                <div className="page-title">Bills</div>
+                                <button className="add-pill" onClick={() => setShowBillAdd(true)}>+ add bill</button>
                             </div>
-                            {WEEKS.map(week => (
-                                <div key={week} style={{marginBottom:"25px", borderLeft: week === getCurrentWeekTag() ? "3px solid #a855f7" : "none", paddingLeft: "10px"}}>
-                                    <div style={{color: week === getCurrentWeekTag() ? "#a855f7" : "#555", fontWeight:"800", fontSize:"13px"}}>{week.toUpperCase()}</div>
-                                    {bills.filter(b => b.week === week).sort((a,b) => a.dueDay - b.dueDay).map(bill => (
-                                        <div key={bill.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems:"center", padding:"15px"}}>
-                                            <div style={{fontWeight:"600"}}>{bill.dueDay} - {bill.name}</div>
-                                            <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                                                <div style={{fontWeight:"700"}}>{formatMoney(bill.amount)}</div>
-                                                <button onClick={(e) => { e.stopPropagation(); if(confirm("Delete?")) window.fs.deleteDoc(window.fs.doc(window.db, "bills", bill.id))}} style={{background: 'none', border: 'none', color: '#ff6b6b', fontSize: '18px'}}>✕</button>
-                                            </div>
+                            {WEEKS.map(week => {
+                                const weekBills = bills.filter(b => getWeekFromDay(b.dueDay) === week).sort((a,b) => a.dueDay - b.dueDay);
+                                const isCurrent = week === getCurrentWeekTag();
+                                return (
+                                    <div key={week} className="week-block">
+                                        <div className={`week-label ${isCurrent ? "current" : ""}`}>
+                                            <span className="dot"/>
+                                            {week}
+                                            {isCurrent && <span style={{fontSize:"9px", marginLeft:"4px"}}>(now)</span>}
                                         </div>
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Modals */}
-                    {showBillAdd && (
-                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
-                                <h3 style={{marginTop:0}}>Add Monthly Bill</h3>
-                                <input style={styles.input} placeholder="Bill Name" value={newBill.name} onChange={e => setNewBill({...newBill, name: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Due Day (1-31)" value={newBill.dueDay} onChange={e => setNewBill({...newBill, dueDay: e.target.value})} />
-                                <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleAddBill}>Save Bill</button>
-                                <button onClick={() => setShowBillAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {showAdd && (
-                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
-                                <h3>New Envelope</h3>
-                                <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
-                                <select style={styles.input} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
-                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                                <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleCreate}>Create</button>
-                                <button onClick={() => setShowAdd(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {showSpend && activeEnv && (
-                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
-                                <h3>Spend: {activeEnv.name}</h3>
-                                <input style={styles.input} placeholder="What for?" value={newTx.desc} onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} />
-                                <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleSpend}>Confirm</button>
-                                <button onClick={() => setShowSpend(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {showSettings && (
-                        <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
-                            <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0"}}>
-                                <h3>{view === "settings" ? "Balances" : "Edit Envelope"}</h3>
-                                {view === "settings" ? (
-                                    <>
-                                        <input style={styles.input} type="number" value={balances.bank} onChange={e => updateBalance("bank", e.target.value)} />
-                                        <input style={styles.input} type="number" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} />
-                                        <input style={styles.input} type="number" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} />
-                                        <button onClick={() => { setShowSettings(false); setView("dashboard"); }} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"700"}}>Save & Done</button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
-                                        <label style={{fontSize: '11px', color: '#888'}}>WEEKLY BASE BUDGET ($)</label>
-                                        <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
-                                        <button style={{width:"100%", padding:"16px", background:"#6366f1", color:"#fff", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleUpdateEnv}>Update</button>
-                                        <button onClick={async () => confirm("Delete?") && (await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id)), setShowSettings(false))} style={{width:"100%", padding:"16px", color:"#ff6b6b", border:"none", fontWeight:"800", marginTop:"10px", background:"none"}}>Delete Envelope</button>
-                                    </>
-                                )}
-                                <button onClick={() => { setShowSettings(false); if(view === "settings") setView("dashboard"); }} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
-                            </div>
+                                        {weekBills.length === 0 && <div style={{fontFamily:"var(--mono)", fontSize:"11px", color:"var(--text3)", paddingLeft:"14px"}}>—</div>}
+                                        {weekBills.map(bill => (
+                                            <div key={bill.id} className="bill-row">
+                                                <span className="bill-day">{bill.dueDay}</span>
+                                                <span className="bill-name">{bill.name}</span>
+                                                <span className="bill-amount">{fmt(bill.amount)}</span>
+                                                <button className="del-btn" onClick={() => showConfirm("Delete this bill?", () => handleDeleteBill(bill.id))}>✕</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
 
                     {view === "details" && activeEnv && (
-                        <div>
-                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", marginBottom:"20px", fontWeight:"600"}}>← Back</button>
-                            <h2>{activeEnv.name} History</h2>
-                            <div style={{background: 'rgba(255,255,255,0.05)', padding: '15px', borderRadius: '15px', marginBottom: '20px', fontSize: '14px'}}>
-                                <div style={{display: 'flex', justifyContent: 'space-between', opacity: 0.7}}>
-                                    <span>Weekly Budget:</span>
-                                    <span>{formatMoney(activeEnv.budget)}</span>
-                                </div>
-                                <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '5px'}}>
-                                    <span>Remaining:</span>
-                                    <span style={{fontWeight: '800'}}>{formatMoney(activeEnv.budget - activeEnv.spent)}</span>
+                        <div className="fade-up">
+                            <button className="back-btn" onClick={() => setView("dashboard")}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                                back
+                            </button>
+                            <div style={{marginBottom:"24px"}}>
+                                <div className="hero-label">{activeEnv.name}</div>
+                                <div className={`hero-amount ${(activeEnv.budget - activeEnv.spent) < 0 ? "negative" : ""}`}>{fmt(activeEnv.budget - activeEnv.spent)}</div>
+                                <div style={{fontFamily:"var(--mono)", fontSize:"11px", color:"var(--text3)", marginTop:"6px"}}>
+                                    {fmt(activeEnv.spent)} spent of {fmt(activeEnv.budget)}
                                 </div>
                             </div>
-                            {activeEnv.transactions?.slice().reverse().map(t => (
-                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between"}}>
-                                    <div><div style={{fontWeight: '600'}}>{t.desc}</div><div style={{fontSize: '11px', color: '#555'}}>{t.date}</div></div>
-                                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                                        <div style={{color:"#ff6b6b", fontWeight:"800"}}>-{formatMoney(t.amount)}</div>
-                                        <button onClick={async () => confirm("Delete?") && await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeEnv.id), { spent: window.fs.increment(-t.amount), transactions: activeEnv.transactions.filter(i => i.id !== t.id) })} style={{background:'none', border:'none', color:'#444'}}>✕</button>
+                            {(!activeEnv.transactions || activeEnv.transactions.length === 0)
+                                ? <div className="empty">no transactions yet</div>
+                                : activeEnv.transactions.slice().reverse().map(t => (
+                                    <div key={t.id} className="tx-row">
+                                        <div>
+                                            <div className="tx-desc" style={t.type === "refill" ? {color:"var(--green)"} : {}}>{t.desc}</div>
+                                            <div className="tx-date">{t.date}{t.type === "refill" && t.newBudget ? ` · new budget ${fmt(t.newBudget)}` : ""}</div>
+                                        </div>
+                                        <div style={{display:"flex", alignItems:"center", gap:"12px"}}>
+                                            {t.type === "refill"
+                                                ? <div style={{fontFamily:"var(--mono)", fontSize:"13px", color:"var(--green)", fontWeight:500}}>refill</div>
+                                                : <div className="tx-amount">-{fmt(t.amount)}</div>
+                                            }
+                                            <button className="del-btn" onClick={() => showConfirm("Delete this transaction?", () => handleDeleteTx(t))}>✕</button>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))
+                            }
                         </div>
                     )}
                 </div>
-            );
-        }
-        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-    </script>
+
+                {/* Sheets */}
+                {showAdd && (
+                    <div className="sheet-overlay" onClick={(e) => e.target === e.currentTarget && setShowAdd(false)}>
+                        <div className="sheet">
+                            <div className="sheet-handle"/>
+                            <div className="sheet-title">New Envelope</div>
+                            <div className="field"><div className="field-label">name</div><input className="inp" placeholder="Groceries" value={newEnv.name} onChange={e => setNewEnv({...newEnv, name: e.target.value})} /></div>
+                            <div className="field"><div className="field-label">budget</div><input className="inp" type="number" placeholder="0.00" value={newEnv.budget} onChange={e => setNewEnv({...newEnv, budget: e.target.value})} /></div>
+                            <div className="field"><div className="field-label">category</div>
+                                <select className="inp" value={newEnv.category} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
+                                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <button className="cta cta-primary" style={{marginBottom:"8px"}} onClick={handleCreate}>Create</button>
+                            <button className="cta cta-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+
+                {showSpend && activeEnv && (
+                    <div className="sheet-overlay" onClick={(e) => e.target === e.currentTarget && setShowSpend(false)}>
+                        <div className="sheet">
+                            <div className="sheet-handle"/>
+                            <div className="sheet-title">Spend — {activeEnv.name}</div>
+                            <div style={{fontFamily:"var(--mono)", fontSize:"11px", color:"var(--text3)", marginBottom:"20px"}}>
+                                {fmt(activeEnv.budget - activeEnv.spent)} remaining
+                            </div>
+                            <div className="field"><div className="field-label">description</div><input className="inp" placeholder="What for?" value={newTx.desc} onChange={e => setNewTx({...newTx, desc: e.target.value})} /></div>
+                            <div className="field"><div className="field-label">amount</div><input className="inp" type="number" placeholder="0.00" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} /></div>
+                            <button className="cta cta-primary" style={{marginBottom:"8px"}} onClick={handleSpend}>Confirm</button>
+                            <button className="cta cta-ghost" onClick={() => setShowSpend(false)}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+
+                {showBillAdd && (
+                    <div className="sheet-overlay" onClick={(e) => e.target === e.currentTarget && setShowBillAdd(false)}>
+                        <div className="sheet">
+                            <div className="sheet-handle"/>
+                            <div className="sheet-title">Add Bill</div>
+                            <div className="field"><div className="field-label">name</div><input className="inp" placeholder="Rent" value={newBill.name} onChange={e => setNewBill({...newBill, name: e.target.value})} /></div>
+                            <div className="field"><div className="field-label">amount</div><input className="inp" type="number" placeholder="0.00" value={newBill.amount} onChange={e => setNewBill({...newBill, amount: e.target.value})} /></div>
+                            <div className="field"><div className="field-label">due day (1–31)</div><input className="inp" type="number" placeholder="1" min="1" max="31" value={newBill.dueDay} onChange={e => setNewBill({...newBill, dueDay: e.target.value})} /></div>
+                            {newBill.dueDay && <div className="hint">→ {getWeekFromDay(newBill.dueDay)}</div>}
+                            <button className="cta cta-primary" style={{marginBottom:"8px"}} onClick={handleAddBill}>Save</button>
+                            <button className="cta cta-ghost" onClick={() => setShowBillAdd(false)}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+
+                {settingsMode !== null && (
+                    <div className="sheet-overlay" onClick={(e) => e.target === e.currentTarget && setSettingsMode(null)}>
+                        <div className="sheet">
+                            <div className="sheet-handle"/>
+                            <div className="sheet-title">{settingsMode === "balances" ? "Balances" : "Edit Envelope"}</div>
+                            {settingsMode === "balances" ? (
+                                <>
+                                    <div className="field"><div className="field-label">bank</div><input className="inp" type="number" value={balances.bank} onChange={e => updateBalance("bank", e.target.value)} /></div>
+                                    <div className="field"><div className="field-label">credit</div><input className="inp" type="number" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} /></div>
+                                    <div className="field"><div className="field-label">savings</div><input className="inp" type="number" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} /></div>
+                                    <button className="cta cta-primary" onClick={() => setSettingsMode(null)}>Done</button>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="field"><div className="field-label">name</div><input className="inp" value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} /></div>
+                                    <div className="field"><div className="field-label">budget</div><input className="inp" type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} /></div>
+                                    <div className="field"><div className="field-label">category</div>
+                                        <select className="inp" value={editEnv.category} onChange={e => setEditEnv({...editEnv, category: e.target.value})}>
+                                            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                                        </select>
+                                    </div>
+                                    <button className="cta cta-indigo" style={{marginBottom:"8px"}} onClick={handleUpdateEnv}>Update</button>
+                                    <button className="cta cta-danger" onClick={() => showConfirm("Delete this envelope?", () => handleDeleteEnv(editEnv.id))}>Delete Envelope</button>
+                                </>
+                            )}
+                            <button className="cta cta-ghost" style={{marginTop:"4px"}} onClick={() => setSettingsMode(null)}>Cancel</button>
+                        </div>
+                    </div>
+                )}
+            </>
+        );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
 </body>
 </html>
