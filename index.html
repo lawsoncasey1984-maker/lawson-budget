@@ -57,6 +57,9 @@
             const [newBill, setNewBill] = useState({ name: "", amount: "", week: "Week 1", dueDay: "" });
             const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: 0, category: "Daily" });
 
+            // Derived State: Find the active envelope based on the ID
+            const activeEnv = envelopes.find(e => e.id === activeId);
+
             useEffect(() => {
                 if (!window.db) return;
                 
@@ -94,7 +97,9 @@
             const currentWeekTag = getCurrentWeek();
 
             async function updateBalance(key, val) {
-                await window.fs.setDoc(window.fs.doc(window.db, "meta", "balances"), { ...balances, [key]: parseFloat(val) || 0 });
+                const newBals = { ...balances, [key]: parseFloat(val) || 0 };
+                setBalances(newBals);
+                await window.fs.setDoc(window.fs.doc(window.db, "meta", "balances"), newBals);
             }
 
             async function handleUpdateEnv() {
@@ -131,13 +136,15 @@
                     category: newEnv.category, transactions: [], lastRefill: new Date().toLocaleDateString()
                 });
                 setShowAdd(false);
+                setNewEnv({ name: "", budget: "", category: "Daily" });
             }
 
             async function handleSpend() {
+                if (!activeId || !newTx.amount) return;
                 const amt = parseFloat(newTx.amount);
                 await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
                     spent: window.fs.increment(amt),
-                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc, amount: amt, date: new Date().toLocaleDateString() })
+                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc || "No Description", amount: amt, date: new Date().toLocaleDateString() })
                 });
                 setShowSpend(false);
                 setNewTx({ desc: "", amount: "" });
@@ -160,7 +167,7 @@
                         <h1 style={{margin:0, fontSize: "22px", fontWeight: "800"}} onClick={() => setView("dashboard")}>Lawson</h1>
                         <div style={{display: 'flex', gap: '8px'}}>
                             <button onClick={() => setView("bills")} style={{background: view === "bills" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>📅</button>
-                            <button onClick={() => setView("settings")} style={{background: view === "settings" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>⚙️</button>
+                            <button onClick={() => { setView("settings"); setShowSettings(true); }} style={{background: view === "settings" ? "#6366f1" : "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>⚙️</button>
                         </div>
                     </header>
 
@@ -222,7 +229,7 @@
                         </div>
                     )}
 
-                    {/* All Modals */}
+                    {/* Modals */}
                     {showBillAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
@@ -242,7 +249,7 @@
                     {showSettings && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
-                                <h3 style={{marginTop:0}}>Settings</h3>
+                                <h3 style={{marginTop:0}}>{view === "settings" ? "Global Settings" : "Envelope Settings"}</h3>
                                 {view === "settings" ? (
                                     <>
                                         <label style={{fontSize:"11px", color:"#888"}}>BANK ACCOUNT</label>
@@ -251,7 +258,7 @@
                                         <input style={styles.input} type="number" value={balances.credit} onChange={e => updateBalance("credit", e.target.value)} />
                                         <label style={{fontSize:"11px", color:"#888"}}>SAVINGS</label>
                                         <input style={styles.input} type="number" value={balances.savings} onChange={e => updateBalance("savings", e.target.value)} />
-                                        <button onClick={() => setView("dashboard")} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700"}}>Done</button>
+                                        <button onClick={() => { setShowSettings(false); setView("dashboard"); }} style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"15px", fontWeight:"700"}}>Done</button>
                                     </>
                                 ) : (
                                     <>
@@ -262,12 +269,10 @@
                                         <button onClick={async () => { if(confirm("Delete envelope?")) { await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id)); setShowSettings(false); } }} style={{width:"100%", padding:"16px", background:"rgba(255,107,107,0.1)", color:"#ff6b6b", border:"none", borderRadius:"15px", fontWeight:"800", marginTop:"10px"}}>Delete Envelope</button>
                                     </>
                                 )}
-                                <button onClick={() => setShowSettings(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
+                                <button onClick={() => { setShowSettings(false); if(view === "settings") setView("dashboard"); }} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
                         </div>
                     )}
-
-                    {view === "settings" && !showSettings && setView("dashboard") || null}
 
                     {showAdd && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
@@ -284,12 +289,12 @@
                         </div>
                     )}
 
-                    {showSpend && (
+                    {showSpend && activeEnv && (
                         <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.95)", display:"flex", alignItems:"flex-end", zIndex:1000}}>
                             <div style={{background:"#16161e", width:"100%", padding:"32px", borderRadius:"32px 32px 0 0", borderTop:"1px solid #333"}}>
-                                <h3>Spend from {activeEnv?.name}</h3>
-                                <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                <h3>Spend from {activeEnv.name}</h3>
+                                <input style={styles.input} placeholder="Description" value={newTx.desc} onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                <input style={styles.input} type="number" placeholder="Amount" value={newTx.amount} onChange={e => setNewTx({...newTx, amount: e.target.value})} />
                                 <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", borderRadius:"15px", border:"none", fontWeight:"800"}} onClick={handleSpend}>Confirm</button>
                                 <button onClick={() => setShowSpend(false)} style={{width:"100%", background:"none", border:"none", color:"#888", marginTop:"15px"}}>Cancel</button>
                             </div>
@@ -304,11 +309,12 @@
                                 <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: 'center'}}>
                                     <div>
                                         <div style={{fontWeight: '600'}}>{t.desc}</div>
-                                        <div style={{fontSize: '11px', color: '#555'}}>{t.date}</div>
+                                        <div style={{fontSize: '11px', color: '#888'}}>{t.date}</div>
                                     </div>
                                     <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                         <div style={{color:"#ff6b6b", fontWeight:"800"}}>-{formatMoney(t.amount)}</div>
-                                        <button onClick={async () => {
+                                        <button onClick={async (e) => {
+                                            e.stopPropagation();
                                             if(confirm("Delete transaction?")) {
                                                 const envRef = window.fs.doc(window.db, "envelopes", activeEnv.id);
                                                 await window.fs.updateDoc(envRef, {
