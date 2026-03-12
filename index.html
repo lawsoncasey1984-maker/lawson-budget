@@ -4,13 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Lawson Budget</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment } 
+        import { getFirestore, collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, writeBatch } 
         from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -23,74 +24,39 @@
             measurementId: "G-NPLMZ6JQ96"
         };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            window.db = db;
-            window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment };
-            console.log("Firebase Initialized Successfully");
-        } catch (error) {
-            console.error("Firebase Initialization Failed:", error);
-        }
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window.db = db;
+        window.fs = { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, increment, writeBatch };
     </script>
 </head>
-<body style="margin:0; background: #0f0f13; font-family: -apple-system, sans-serif; color: #e8e8f0;">
+<body style="margin:0; background: #0b0b0f; font-family: 'Inter', sans-serif; color: #ffffff; -webkit-font-smoothing: antialiased;">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        const formatMoney = (n) => "$" + Number(n).toFixed(2);
+        const { useState, useEffect } = React;
+        const formatMoney = (n) => "$" + Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const CATEGORIES = ["Daily", "Bills", "Fun", "Household", "Savings", "Other"];
 
         function App() {
             const [envelopes, setEnvelopes] = useState([]);
             const [loading, setLoading] = useState(true);
             const [view, setView] = useState("dashboard");
             const [activeId, setActiveId] = useState(null);
+            
             const [showAdd, setShowAdd] = useState(false);
             const [showSpend, setShowSpend] = useState(false);
-            const [showEdit, setShowEdit] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
             
-            const [newEnv, setNewEnv] = useState({ name: "", budget: "" });
+            const [newEnv, setNewEnv] = useState({ name: "", budget: "", category: "Daily" });
             const [newTx, setNewTx] = useState({ desc: "", amount: "" });
-            const [editEnv, setEditEnv] = useState({ id: "", name: "" });
-            
-            const hasCheckedReset = useRef(false);
+            const [editEnv, setEditEnv] = useState({ id: "", name: "", baseBudget: 0, category: "Daily" });
 
             useEffect(() => {
-                if (!window.db) {
-                    // Wait a moment for Firebase to attach to window
-                    const timer = setTimeout(() => { if(!window.db) alert("Database connection timeout. Refresh page."); }, 5000);
-                    return () => clearTimeout(timer);
-                }
-                
-                const unsub = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), async (snapshot) => {
+                if (!window.db) return;
+                const unsub = window.fs.onSnapshot(window.fs.collection(window.db, "envelopes"), (snapshot) => {
                     const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    
-                    const now = new Date();
-                    const day = now.getDay();
-                    const diff = (day >= 5) ? (day - 5) : (day + 2); 
-                    const lastFriday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
-                    lastFriday.setHours(0,0,0,0);
-                    const resetKey = lastFriday.getTime();
-
-                    if (!hasCheckedReset.current && docs.length > 0) {
-                        hasCheckedReset.current = true;
-                        for (const env of docs) {
-                            if (!env.lastReset || env.lastReset < resetKey) {
-                                const remaining = (env.budget || 0) - (env.spent || 0);
-                                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", env.id), {
-                                    budget: (env.baseBudget || 0) + (remaining > 0 ? remaining : 0),
-                                    spent: 0,
-                                    lastReset: resetKey,
-                                    transactions: [] 
-                                });
-                            }
-                        }
-                    }
                     setEnvelopes(docs);
-                    setLoading(false);
-                }, (error) => {
-                    console.error("Snapshot Error:", error);
                     setLoading(false);
                 });
                 return () => unsub();
@@ -98,139 +64,167 @@
 
             const activeEnv = envelopes.find(e => e.id === activeId);
             const totalRemaining = envelopes.reduce((acc, env) => acc + (env.budget - env.spent), 0);
+            
+            // Grouping logic for dashboard
+            const groupedEnvelopes = envelopes.reduce((acc, env) => {
+                const cat = env.category || "Other";
+                if (!acc[cat]) acc[cat] = [];
+                acc[cat].push(env);
+                return acc;
+            }, {});
+
+            async function handleRefillAll() {
+                if (!confirm("Refill ALL envelopes and rollover remaining balances?")) return;
+                const batch = window.fs.writeBatch(window.db);
+                envelopes.forEach((env) => {
+                    const remaining = (env.budget || 0) - (env.spent || 0);
+                    batch.update(window.fs.doc(window.db, "envelopes", env.id), {
+                        budget: (env.baseBudget || 0) + (remaining > 0 ? remaining : 0),
+                        spent: 0,
+                        transactions: [],
+                        lastRefill: new Date().toLocaleDateString()
+                    });
+                });
+                await batch.commit();
+            }
 
             async function handleCreate() {
                 if (!newEnv.name || !newEnv.budget) return;
                 const b = parseFloat(newEnv.budget);
                 await window.fs.addDoc(window.fs.collection(window.db, "envelopes"), {
-                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, transactions: [], lastReset: Date.now()
+                    name: newEnv.name, baseBudget: b, budget: b, spent: 0, 
+                    category: newEnv.category, transactions: [], lastRefill: new Date().toLocaleDateString()
                 });
-                setNewEnv({ name: "", budget: "" }); setShowAdd(false);
-            }
-
-            async function handleUpdateName() {
-                if (!editEnv.name) return;
-                await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { name: editEnv.name });
-                setShowEdit(false);
-            }
-
-            async function handleDeleteEnv() {
-                if (confirm(`Delete "${editEnv.name}"?`)) {
-                    await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id));
-                    setShowEdit(false);
-                    setView("dashboard");
-                }
+                setShowAdd(false);
             }
 
             async function handleSpend() {
-                if (!newTx.amount || !activeId) return;
                 const amt = parseFloat(newTx.amount);
                 await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", activeId), {
                     spent: window.fs.increment(amt),
-                    transactions: window.fs.arrayUnion({
-                        id: Date.now(),
-                        desc: newTx.desc || "Purchase",
-                        amount: amt,
-                        date: new Date().toLocaleDateString()
-                    })
+                    transactions: window.fs.arrayUnion({ id: Date.now(), desc: newTx.desc, amount: amt, date: new Date().toLocaleDateString() })
                 });
-                setNewTx({ desc: "", amount: "" }); setShowSpend(false);
+                setShowSpend(false);
             }
 
             const styles = {
-                app: { padding: "20px", maxWidth: "500px", margin: "0 auto" },
-                loading: { height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
-                card: { background: "#1e1e2e", padding: "20px", borderRadius: "16px", marginBottom: "15px", border: "1px solid #333", position: "relative" },
-                btn: { width: "100%", padding: "14px", background: "#a78bfa", color: "white", border: "none", borderRadius: "12px", fontWeight: "bold", cursor: "pointer" },
-                input: { width: "100%", padding: "14px", marginBottom: "12px", borderRadius: "10px", border: "1px solid #444", background: "#000", color: "#fff", boxSizing: "border-box" },
-                modal: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px", zIndex: 100 }
+                app: { padding: "24px", maxWidth: "480px", margin: "0 auto", paddingBottom: "120px" },
+                totalCard: { background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)", padding: "30px", borderRadius: "24px", marginBottom: "20px" },
+                card: { background: "rgba(255, 255, 255, 0.04)", backdropFilter: "blur(10px)", padding: "20px", borderRadius: "20px", marginBottom: "16px", border: "1px solid rgba(255, 255, 255, 0.08)" },
+                categoryHeader: { fontSize: "12px", textTransform: "uppercase", letterSpacing: "1.5px", color: "#6366f1", fontWeight: "800", margin: "24px 0 12px 8px" },
+                input: { width: "100%", padding: "16px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "12px", fontSize: "16px", outline: "none" },
+                select: { width: "100%", padding: "16px", background: "#000", border: "1px solid #333", color: "#fff", borderRadius: "12px", marginBottom: "20px", fontSize: "16px" }
             };
 
-            if (loading) return <div style={styles.loading}><h2>Loading Lawson Budget...</h2></div>;
+            if (loading) return <div style={{height: "100vh", display: "flex", alignItems: "center", justifyContent: "center"}}><h3>Syncing Lawson Budget...</h3></div>;
 
             return (
                 <div style={styles.app}>
-                    <header style={{textAlign: "center", marginBottom: "25px"}}>
-                        <h1 style={{margin:0}}>✦ Lawson Budget</h1>
+                    <header style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px'}}>
+                        <h1 style={{margin:0, fontSize: "24px", fontWeight: "800"}}>Lawson</h1>
+                        <div style={{display: 'flex', gap: '10px'}}>
+                            <button onClick={() => setView(view === "stats" ? "dashboard" : "stats")} style={{background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>{view === "stats" ? "🏠" : "📊"}</button>
+                            <button onClick={() => setShowAdd(true)} style={{background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", padding: "8px 12px", borderRadius: "10px"}}>+ New</button>
+                        </div>
                     </header>
 
                     {view === "dashboard" ? (
                         <>
-                            <div style={{background: "linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%)", padding: "24px", borderRadius: "20px", marginBottom: "25px", textAlign: "center", color: "#0f0f13"}}>
-                                <div style={{fontSize: "13px", fontWeight: "600", opacity: 0.8}}>AVAILABLE</div>
-                                <div style={{fontSize: "42px", fontWeight: "900"}}>{formatMoney(totalRemaining)}</div>
+                            <div style={styles.totalCard}>
+                                <div style={{fontSize: "13px", fontWeight: "600", opacity: 0.8}}>TOTAL AVAILABLE</div>
+                                <div style={{fontSize: "42px", fontWeight: "800", marginTop: "8px"}}>{formatMoney(totalRemaining)}</div>
                             </div>
 
-                            {envelopes.map(env => (
-                                <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
-                                    <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
-                                        <span style={{fontWeight:"bold", fontSize:"18px"}}>{env.name}</span>
-                                        <button style={{background:"none", border:"none", cursor:"pointer"}} onClick={(e) => { 
-                                            e.stopPropagation(); 
-                                            setEditEnv({id: env.id, name: env.name});
-                                            setShowEdit(true);
-                                        }}>⚙️</button>
-                                    </div>
-                                    <div style={{fontSize: "36px", margin: "12px 0", fontWeight: "800", color: (env.budget - env.spent) < 0 ? "#ff6b6b" : "#4ECDC4"}}>
-                                        {formatMoney(env.budget - env.spent)}
-                                    </div>
-                                    <button style={{...styles.btn, background: "#4ECDC4", color: "#0f0f13", width: "auto", padding: "8px 15px"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Add Purchase</button>
+                            <button onClick={handleRefillAll} style={{width: "100%", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid #10b981", borderRadius: "14px", padding: "12px", fontWeight: "700", marginBottom: "12px", cursor: "pointer"}}>⚡ Refill All Envelopes</button>
+
+                            {Object.entries(groupedEnvelopes).map(([category, items]) => (
+                                <div key={category}>
+                                    <div style={styles.categoryHeader}>{category}</div>
+                                    {items.map(env => (
+                                        <div key={env.id} style={styles.card} onClick={() => { setActiveId(env.id); setView("details"); }}>
+                                            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                                                <span style={{fontWeight:"700", color: "#a1a1aa"}}>{env.name}</span>
+                                                <button style={{background:"none", border:"none", fontSize: "20px"}} onClick={(e) => { e.stopPropagation(); setEditEnv({id: env.id, name: env.name, baseBudget: env.baseBudget, category: env.category}); setShowSettings(true); }}>⚙️</button>
+                                            </div>
+                                            <div style={{fontSize: "28px", fontWeight: "700", margin: "8px 0", color: (env.budget - env.spent) < 0 ? "#ef4444" : "#fff"}}>{formatMoney(env.budget - env.spent)}</div>
+                                            <button style={{background: "#fff", color: "#000", border: "none", borderRadius: "8px", padding: "6px 14px", fontWeight: "700"}} onClick={(e) => { e.stopPropagation(); setActiveId(env.id); setShowSpend(true); }}>Spend</button>
+                                        </div>
+                                    ))}
                                 </div>
                             ))}
-                            <button style={{...styles.btn, background: "transparent", border: "2px dashed #333", color: "#888"}} onClick={() => setShowAdd(true)}>+ New Envelope</button>
                         </>
+                    ) : view === "stats" ? (
+                        <div>
+                             <h2 style={{fontSize: "28px", marginBottom: "24px"}}>Category Spending</h2>
+                             {Object.entries(groupedEnvelopes).map(([category, items]) => {
+                                 const catSpent = items.reduce((s, i) => s + i.spent, 0);
+                                 const catBudget = items.reduce((s, i) => s + i.budget, 0);
+                                 const pct = (catSpent / catBudget) * 100;
+                                 return (
+                                     <div key={category} style={{marginBottom: "32px"}}>
+                                         <div style={{display: "flex", justifyContent: "space-between", marginBottom: "8px"}}>
+                                             <span style={{fontWeight: "700"}}>{category}</span>
+                                             <span style={{color: pct > 100 ? "#ef4444" : "#a1a1aa"}}>{formatMoney(catSpent)} spent</span>
+                                         </div>
+                                         <div style={{height: "12px", background: "rgba(255,255,255,0.05)", borderRadius: "6px", overflow: "hidden"}}>
+                                             <div style={{height: "100%", width: `${Math.min(100, pct)}%`, background: pct > 100 ? "#ef4444" : "#6366f1", transition: "width 1s"}} />
+                                         </div>
+                                     </div>
+                                 );
+                             })}
+                        </div>
                     ) : (
                         <div>
-                            <div style={{display: 'flex', justifyContent: 'space-between'}}>
-                                <button onClick={() => setView("dashboard")} style={{color:"#a78bfa", background:"none", border:"none"}}>← Back</button>
-                                <button style={{background:"none", border:"none"}} onClick={() => { setEditEnv({id: activeEnv.id, name: activeEnv.name}); setShowEdit(true); }}>⚙️ Settings</button>
-                            </div>
-                            <h2 style={{fontSize: "28px", margin: "15px 0"}}>{activeEnv?.name}</h2>
-                            <div style={{fontSize: "20px", color: (activeEnv?.budget - activeEnv?.spent) < 0 ? "#ff6b6b" : "#4ECDC4", marginBottom: "20px"}}>{formatMoney(activeEnv?.budget - activeEnv?.spent)} left</div>
-                            
+                            <button onClick={() => setView("dashboard")} style={{background:"none", border:"none", color:"#6366f1", fontWeight:"600", marginBottom: "24px"}}>← Dashboard</button>
+                            <h2 style={{fontSize: "32px", margin: "0 0 8px 0"}}>{activeEnv?.name}</h2>
                             {activeEnv?.transactions?.slice().reverse().map(t => (
-                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", padding: "15px"}}>
-                                    <div>{t.desc}<div style={{fontSize:"10px", color:"#888"}}>{t.date}</div></div>
-                                    <div style={{color:"#ff6b6b", fontWeight:"bold"}}>-{formatMoney(t.amount)}</div>
+                                <div key={t.id} style={{...styles.card, display:"flex", justifyContent:"space-between", alignItems: "center"}}>
+                                    <div><div style={{fontWeight: "600"}}>{t.desc}</div><div style={{fontSize:"12px", color:"#71717a"}}>{t.date}</div></div>
+                                    <div style={{fontWeight: "700", color: "#ef4444"}}>-{formatMoney(t.amount)}</div>
                                 </div>
                             ))}
                         </div>
                     )}
 
-                    {/* Modals are simplified for reliability */}
-                    {showEdit && (
-                        <div style={styles.modal}>
-                            <div style={{...styles.card, width: "100%"}}>
-                                <h3>Settings</h3>
-                                <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
-                                <button style={styles.btn} onClick={handleUpdateName}>Save</button>
-                                <button style={{...styles.btn, background: "red", marginTop: "10px"}} onClick={handleDeleteEnv}>Delete Envelope</button>
-                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowEdit(false)}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {showAdd && (
-                        <div style={styles.modal}>
-                            <div style={{...styles.card, width: "100%"}}>
-                                <h3>New Envelope</h3>
-                                <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
-                                <button style={styles.btn} onClick={handleCreate}>Create</button>
-                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowAdd(false)}>Cancel</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {showSpend && (
-                        <div style={styles.modal}>
-                            <div style={{...styles.card, width: "100%"}}>
-                                <h3>Spend: {activeEnv?.name}</h3>
-                                <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
-                                <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
-                                <button style={styles.btn} onClick={handleSpend}>Confirm</button>
-                                <button style={{marginTop: "10px", width: "100%", background: "none", border: "none", color: "#888"}} onClick={() => setShowSpend(false)}>Cancel</button>
-                            </div>
+                    {/* Modals for Add/Spend/Settings */}
+                    {(showAdd || showSpend || showSettings) && (
+                        <div style={{position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 1000}} onClick={() => { setShowAdd(false); setShowSpend(false); setShowSettings(false); }}>
+                             <div style={{background: "#16161e", width: "100%", maxWidth: "480px", padding: "32px", borderRadius: "32px 32px 0 0"}} onClick={e => e.stopPropagation()}>
+                                {showAdd && <>
+                                    <h3 style={{marginTop: 0, fontSize: "24px"}}>New Envelope</h3>
+                                    <input style={styles.input} placeholder="Name" onChange={e => setNewEnv({...newEnv, name: e.target.value})} />
+                                    <input style={styles.input} type="number" placeholder="Weekly Budget" onChange={e => setNewEnv({...newEnv, budget: e.target.value})} />
+                                    <select style={styles.select} value={newEnv.category} onChange={e => setNewEnv({...newEnv, category: e.target.value})}>
+                                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"12px", fontWeight:"700"}} onClick={handleCreate}>Create</button>
+                                </>}
+                                {showSpend && <>
+                                    <h3 style={{marginTop: 0, fontSize: "24px"}}>Add Purchase</h3>
+                                    <input style={styles.input} placeholder="Description" onChange={e => setNewTx({...newTx, desc: e.target.value})} />
+                                    <input style={styles.input} type="number" placeholder="Amount" onChange={e => setNewTx({...newTx, amount: e.target.value})} />
+                                    <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"12px", fontWeight:"700"}} onClick={handleSpend}>Confirm</button>
+                                </>}
+                                {showSettings && <>
+                                    <h3 style={{marginTop: 0, fontSize: "24px"}}>Settings</h3>
+                                    <input style={styles.input} value={editEnv.name} onChange={e => setEditEnv({...editEnv, name: e.target.value})} />
+                                    <input style={styles.input} type="number" value={editEnv.baseBudget} onChange={e => setEditEnv({...editEnv, baseBudget: e.target.value})} />
+                                    <select style={styles.select} value={editEnv.category} onChange={e => setEditEnv({...editEnv, category: e.target.value})}>
+                                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                    <button style={{width:"100%", padding:"16px", background:"#fff", color:"#000", border:"none", borderRadius:"12px", fontWeight:"700"}} onClick={async () => {
+                                        await window.fs.updateDoc(window.fs.doc(window.db, "envelopes", editEnv.id), { 
+                                            name: editEnv.name, 
+                                            baseBudget: parseFloat(editEnv.baseBudget),
+                                            category: editEnv.category
+                                        });
+                                        setShowSettings(false);
+                                    }}>Save</button>
+                                    <button style={{width:"100%", padding:"16px", background:"rgba(239, 68, 68, 0.1)", color:"#ef4444", border:"none", borderRadius:"12px", fontWeight:"700", marginTop:"10px"}} onClick={async () => {
+                                        if(confirm("Delete?")) { await window.fs.deleteDoc(window.fs.doc(window.db, "envelopes", editEnv.id)); setShowSettings(false); setView("dashboard"); }
+                                    }}>Delete Envelope</button>
+                                </>}
+                             </div>
                         </div>
                     )}
                 </div>
